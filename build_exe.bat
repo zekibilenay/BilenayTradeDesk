@@ -1,0 +1,10 @@
+@echo off
+REM Builds TradeHub.exe  ->  dist\TradeHub\TradeHub.exe
+REM Requires Python 3.10+ from python.org (keep the "tcl/tk and IDLE" option ticked).
+cd /d "%~dp0"
+py -m pip install --upgrade pip
+py -m pip install -r requirements.txt pyinstaller
+py -m PyInstaller --noconfirm --clean --onedir --windowed --name TradeHub --icon assets\icon.ico --hidden-import PIL._tkinter_finder main.py
+echo.
+echo Done. Your app: dist\TradeHub\TradeHub.exe
+pause

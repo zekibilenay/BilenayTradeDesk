@@ -1,0 +1,12 @@
+# user data (never commit your trades!)
+data/
+# build output
+build/
+dist/
+*.spec
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
