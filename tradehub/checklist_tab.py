@@ -199,6 +199,8 @@ class ChecklistTab(ttk.Frame):
         super().__init__(master)
         self.db = db
         self.template = load_template()
+        for sec in self.template["sections"]:          # templates written by older code have no "options"
+            sec.setdefault("options", [])
         self.day = date.today()
         self.answers = {}                 # item_id -> {"note": str, "confirmed": bool}
         self.choices = {}                 # section_id -> option_id (the option picked for the day)
@@ -330,7 +332,7 @@ class ChecklistTab(ttk.Frame):
             cards.append(card)
         foot = tk.Frame(sf, bg=theme.PANEL)
         foot.pack(fill="x", pady=(6, 0))
-        if not sec["options"]:
+        if not sec.get("options"):
             ttk.Button(foot, text="+ Add choices", command=lambda s=si: self.add_option(s, "Option 1")).pack(
                 side="right", padx=(8, 0))
         add = PlaceholderEntry(foot, "+ Add a requirement — type it and press Enter",
@@ -348,7 +350,7 @@ class ChecklistTab(ttk.Frame):
     def _build_choices(self, sf, si, sec):
         """The 'pick one' block of a section (nothing is drawn when the section has no choices)."""
         cards = []
-        if not sec["options"]:
+        if not sec.get("options"):
             return cards
         ui = theme.F["ui"]
         chosen = self.choices.get(sec["id"])
@@ -418,7 +420,7 @@ class ChecklistTab(ttk.Frame):
         self._update_banner()
 
     def add_section(self, title):
-        self.template["sections"].append({"id": new_id(), "title": title, "items": []})
+        self.template["sections"].append({"id": new_id(), "title": title, "items": [], "options": []})
         self._save_template_soon()
         self._render(focus=len(self.template["sections"]) - 1)
         self._update_banner()
