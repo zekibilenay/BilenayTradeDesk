@@ -11,6 +11,14 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def resource_dir() -> Path:
+    """Where bundled read-only files (assets/) live: next to the sources, or inside the PyInstaller bundle."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent.parent
+
+
+ASSETS_DIR = resource_dir() / "assets"
 DATA_DIR = app_dir() / "data"
 IMAGES_DIR = DATA_DIR / "images"
 DB_PATH = DATA_DIR / "tradehub.db"

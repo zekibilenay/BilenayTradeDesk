@@ -167,8 +167,12 @@ class ConfirmButton(tk.Label):
 def autosize_text(txt, min_lines=1, max_lines=30):
     """Make a Text widget exactly as tall as its content (wrapped lines included)."""
     try:
-        if txt.winfo_width() < 40:
-            return
+        narrow = txt.winfo_width() < 40
+    except tk.TclError:                    # widget already destroyed (delayed call)
+        return
+    if narrow:
+        return
+    try:
         res = txt.count("1.0", "end", "displaylines")
         n = res[0] if isinstance(res, (tuple, list)) else res
         n = int(n or 1)

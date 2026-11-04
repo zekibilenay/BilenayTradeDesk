@@ -6,7 +6,7 @@ from datetime import datetime
 TRADE_FIELDS = (
     "trade_date", "trade_time", "instrument", "direction", "session",
     "entry", "sl", "tp", "exit_price", "outcome", "result_r",
-    "setup", "dxy_conf", "mistakes", "why", "review", "cl_verdict", "cl_score",
+    "setup", "dxy_conf", "mistakes", "why", "review", "cl_verdict", "cl_score", "status",
 )
 
 
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS {name} (
     review      TEXT NOT NULL DEFAULT '',
     cl_verdict  TEXT NOT NULL DEFAULT '',
     cl_score    REAL,
+    status      TEXT NOT NULL DEFAULT 'done',
     created_at  TEXT
 );"""
 
@@ -41,7 +42,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS checklist_days (
     date        TEXT PRIMARY KEY,
     answers     TEXT NOT NULL DEFAULT '{}',
-    note        TEXT NOT NULL DEFAULT '',
+    choices     TEXT NOT NULL DEFAULT '{}',
+    note        TEXT NOT NULL DEFAULT '',            -- unused since v0.3 (day notes were removed); kept so old data survives
     verdict     TEXT NOT NULL DEFAULT '',
     score       REAL NOT NULL DEFAULT 0,
     required_ok INTEGER NOT NULL DEFAULT 0,
@@ -108,6 +110,12 @@ class Database:
                 self.conn.commit()
             finally:
                 self.conn.execute("PRAGMA foreign_keys = ON")
+        # v0.3: trades.status ('draft' = still being edited, 'done' = finished) and checklist_days.choices.
+        # Existing trades become 'done' (the column default), so old entries show up as completed.
+        if "status" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(trades)")}:
+            self.conn.execute("ALTER TABLE trades ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")
+        if "choices" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(checklist_days)")}:
+            self.conn.execute("ALTER TABLE checklist_days ADD COLUMN choices TEXT NOT NULL DEFAULT '{}'")
         for table, column, mapping in VALUE_MAP:
             for old, new in mapping.items():
                 self.conn.execute(f"UPDATE {table} SET {column} = ? WHERE {column} = ?", (new, old))
@@ -119,21 +127,22 @@ class Database:
         if not row:
             return None
         d = dict(row)
-        try:
-            d["answers"] = json.loads(d["answers"])
-        except Exception:
-            d["answers"] = {}
+        for key in ("answers", "choices"):
+            try:
+                d[key] = json.loads(d.get(key) or "{}")
+            except Exception:
+                d[key] = {}
         return d
 
-    def save_checklist_day(self, date_str, answers, note, verdict, score, required_ok):
+    def save_checklist_day(self, date_str, answers, choices, verdict, score, required_ok):
         self.conn.execute(
-            """INSERT INTO checklist_days (date, answers, note, verdict, score, required_ok, updated_at)
+            """INSERT INTO checklist_days (date, answers, choices, verdict, score, required_ok, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(date) DO UPDATE SET answers=excluded.answers, note=excluded.note,
+               ON CONFLICT(date) DO UPDATE SET answers=excluded.answers, choices=excluded.choices,
                  verdict=excluded.verdict, score=excluded.score,
                  required_ok=excluded.required_ok, updated_at=excluded.updated_at""",
-            (date_str, json.dumps(answers, ensure_ascii=False), note, verdict,
-             float(score), 1 if required_ok else 0, _now()))
+            (date_str, json.dumps(answers, ensure_ascii=False), json.dumps(choices, ensure_ascii=False),
+             verdict, float(score), 1 if required_ok else 0, _now()))
         self.conn.commit()
 
     def delete_checklist_day(self, date_str):
@@ -143,7 +152,7 @@ class Database:
     # ------------------------------------------------------------- trades
     def create_trade(self, trade_date, trade_time=""):
         cur = self.conn.execute(
-            "INSERT INTO trades (trade_date, trade_time, outcome, created_at) VALUES (?, ?, 'Open', ?)",
+            "INSERT INTO trades (trade_date, trade_time, outcome, status, created_at) VALUES (?, ?, 'Open', 'draft', ?)",
             (trade_date, trade_time, _now()))
         self.conn.commit()
         return cur.lastrowid

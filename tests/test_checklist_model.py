@@ -57,3 +57,34 @@ def test_normalize_drops_empty_items_and_old_hints():
         {"text": "keep", "hint": "old"}, {"text": "   "}]}]})
     assert [i["text"] for i in t["sections"][0]["items"]] == ["keep"]
     assert "hint" not in t["sections"][0]["items"][0]
+
+
+def test_options_are_kept_and_cleaned():
+    t = cm.normalize({"sections": [{"title": "Phase", "items": [], "options": [
+        {"id": "a", "title": " Retracement ", "desc": "  pulling back  "},
+        {"title": "   ", "desc": "no name -> dropped"}, "junk", {"title": "Expansion"}]}]})
+    opts = t["sections"][0]["options"]
+    assert [o["title"] for o in opts] == ["Retracement", "Expansion"]
+    assert opts[0] == {"id": "a", "title": "Retracement", "desc": "pulling back"} and opts[1]["desc"] == ""
+    assert cm.normalize({"sections": [{"title": "x", "items": []}]})["sections"][0]["options"] == []   # old files
+
+
+def test_options_survive_save_and_load(tmp_path):
+    p = tmp_path / "tpl.json"
+    t = cm.load_template(p)
+    t["sections"][0]["options"].append({"id": "zz", "title": "Custom", "desc": "mine"})
+    cm.save_template(t, p)
+    assert cm.load_template(p)["sections"][0]["options"][-1] == {"id": "zz", "title": "Custom", "desc": "mine"}
+
+
+def test_default_template_has_a_market_phase_example():
+    t = _tpl()
+    assert any(len(s["options"]) >= 3 for s in t["sections"])
+    assert cm.evaluate(t, {})["total"] == sum(len(s["items"]) for s in t["sections"])     # choices don't count
+
+
+def test_coerce_choices_drops_stale_ids():
+    t = cm.normalize({"sections": [{"id": "s1", "title": "Phase", "options": [{"id": "o1", "title": "A"}]}]})
+    assert cm.coerce_choices({"s1": "o1", "s1x": "o1", "s1b": "gone"}, t) == {"s1": "o1"}
+    assert cm.coerce_choices({"s1": "gone"}, t) == {}
+    assert cm.coerce_choices("junk") == {} and cm.coerce_choices({"a": "b"}) == {"a": "b"}

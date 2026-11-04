@@ -119,6 +119,8 @@ class CalendarTab(ttk.Frame):
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True, padx=12)
+        self.paned = paned
+        self.after(80, self._place_sash)
         left = ttk.Frame(paned)
         right = ttk.Frame(paned)
         paned.add(left, weight=3)
@@ -126,16 +128,19 @@ class CalendarTab(ttk.Frame):
 
         cols = ("time", "ccy", "imp", "event", "forecast", "previous", "actual")
         self.tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="browse")
-        spec = [("time", "Time", 200, "w"), ("ccy", "CCY", 70, "w"), ("imp", "Imp", 45, "center"),
-                ("event", "Event", 330, "w"), ("forecast", "Forecast", 85, "e"),
-                ("previous", "Previous", 85, "e"), ("actual", "Actual", 85, "e")]
+        spec = [("time", "Time", 140, "w"), ("ccy", "CCY", 66, "w"), ("imp", "Imp", 36, "center"),
+                ("event", "Event", 190, "w"), ("forecast", "Forecast", 68, "e"),
+                ("previous", "Previous", 68, "e"), ("actual", "Actual", 68, "e")]
         for key, text, width, anchor in spec:
             self.tree.heading(key, text=text)
-            self.tree.column(key, width=width, anchor=anchor, stretch=(key == "event"))
+            self.tree.column(key, width=width, minwidth=width if key != "event" else 120, anchor=anchor,
+                             stretch=(key == "event"))
+        # The scrollbar is packed BEFORE the tree: pack hands out space in packing order, so the other way round
+        # the (wide) tree used up the whole pane and pushed the scrollbar out of view.
         sb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
-        self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
         mono = (theme.F["mono"], 10)
         self.tree.tag_configure("day", background=theme.PANEL2, foreground=theme.FG, font=(ui, 10, "bold"))
         self.tree.tag_configure("today", background=theme.PANEL2, foreground=theme.ACCENT, font=(ui, 10, "bold"))
@@ -166,6 +171,17 @@ class CalendarTab(ttk.Frame):
         self.status = ttk.Label(self, text="", style="Muted.TLabel", padding=(12, 6))
         self.status.pack(fill="x")
         self._update_view_buttons()
+
+    def _place_sash(self):
+        """Give the table ~62 % of the width, so all columns and the scrollbar fit."""
+        try:
+            w = self.paned.winfo_width()
+            if w > 300:
+                self.paned.sashpos(0, int(w * 0.62))
+            else:
+                self.after(100, self._place_sash)
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------- UI callbacks
     def _update_view_buttons(self):
@@ -232,8 +248,8 @@ class CalendarTab(ttk.Frame):
             if dt.date() != last_date:
                 last_date = dt.date()
                 is_today = last_date == today
-                head = f"{DAYS[dt.weekday()]}, {MONTHS[dt.month - 1]} {dt.day}" + ("  • TODAY" if is_today else "")
-                hid = self.tree.insert("", "end", values=(head, "", "", "", "", "", ""),
+                head = f"{DAYS[dt.weekday()]}, {MONTHS[dt.month - 1]} {dt.day}"
+                hid = self.tree.insert("", "end", values=(head, "", "", "• TODAY" if is_today else "", "", "", ""),
                                        tags=("today" if is_today else "day",))
                 if is_today:
                     today_iid = hid

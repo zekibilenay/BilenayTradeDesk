@@ -1,3 +1,4 @@
+import sys
 import tkinter as tk
 import traceback
 from datetime import datetime
@@ -8,7 +9,7 @@ from .calendar_tab import CalendarTab
 from .checklist_tab import ChecklistTab
 from .db import Database
 from .journal_tab import JournalTab
-from .paths import DB_PATH, ERROR_LOG_PATH, SETTINGS_PATH, ensure_dirs
+from .paths import ASSETS_DIR, DB_PATH, ERROR_LOG_PATH, SETTINGS_PATH, ensure_dirs
 from .settings import Settings
 
 
@@ -21,6 +22,7 @@ class TradeHubApp(tk.Tk):
         theme.apply_theme(self)
 
         self.title(f"{APP_NAME} {APP_VERSION}")
+        self._set_icon()
         self.geometry(self._safe_geometry(self.settings.get("geometry")))
         self.minsize(1100, 700)
 
@@ -34,6 +36,23 @@ class TradeHubApp(tk.Tk):
         nb.add(self.journal, text="Trade Journal")
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _set_icon(self):
+        """Title-bar / taskbar icon. (Until v0.2 only the .exe file had an icon; the window itself kept Tk's
+        default feather.) Windows uses the .ico (all its sizes), other systems the .png."""
+        ico, png = ASSETS_DIR / "icon.ico", ASSETS_DIR / "icon.png"
+        if sys.platform.startswith("win") and ico.exists():
+            try:
+                self.iconbitmap(default=str(ico))      # also applies to every later Toplevel (image viewer)
+                return
+            except tk.TclError:
+                pass
+        if png.exists():
+            try:
+                self._icon_img = tk.PhotoImage(file=str(png))
+                self.iconphoto(True, self._icon_img)
+            except tk.TclError:
+                pass
 
     @staticmethod
     def _safe_geometry(g):
