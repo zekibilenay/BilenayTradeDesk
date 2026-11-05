@@ -35,7 +35,7 @@ def parse_events(raw):
             "previous": str(it.get("previous") or "").strip(),
             "actual": str(it.get("actual") or "").strip(),
         })
-    events.sort(key=lambda e: e["dt"])
+    events.sort(key=lambda e=None: e["dt"])
     return events
 
 

@@ -18,7 +18,6 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageGrab, ImageOps, ImageTk
 
 from . import theme
-from .checklist_model import VERDICT_LABELS
 from .paths import IMAGES_DIR
 from .widgets import ConfirmButton, ScrollFrame, bind_autosize
 
@@ -91,10 +90,10 @@ class ImageViewer(tk.Toplevel):
         self.lbl.pack(fill="both", expand=True)
         self.cap = tk.Label(self, bg="#111", fg="white", font=(theme.F["ui"], 11), pady=6)
         self.cap.pack(fill="x")
-        self.bind("<Escape>", lambda e: self.destroy())
-        self.bind("<Left>", lambda e: self._go(-1))
-        self.bind("<Right>", lambda e: self._go(1))
-        self.lbl.bind("<Button-1>", lambda e: self._go(1))
+        self.bind("<Escape>", lambda e=None: self.destroy())
+        self.bind("<Left>", lambda e=None: self._go(-1))
+        self.bind("<Right>", lambda e=None: self._go(1))
+        self.lbl.bind("<Button-1>", lambda e=None: self._go(1))
         self.focus_set()
         self._show()
 
@@ -193,7 +192,7 @@ class Gallery(tk.Frame):
         lbl = tk.Label(blk, image=photo, bg="#000", cursor="hand2", bd=0)
         lbl.image = photo
         lbl.pack(padx=6, pady=(6, 4))
-        lbl.bind("<Button-1>", lambda e, i=idx: self.card.open_viewer(i))
+        lbl.bind("<Button-1>", lambda e=None, i=idx: self.card.open_viewer(i))
         line = tk.Frame(blk, bg=theme.PANEL2)
         line.pack(fill="x", padx=6, pady=(0, 6))
         if self.editable:
@@ -203,7 +202,7 @@ class Gallery(tk.Frame):
             kcb.pack(side="left")
             self.tab.feed.guard_wheel(kcb)
             kcb.bind("<<ComboboxSelected>>",
-                     lambda e, rid=r["id"], v=kind_var, cb=kcb: (self.card.db.update_image(rid, kind=v.get()),
+                     lambda e=None, rid=r["id"], v=kind_var, cb=kcb: (self.card.db.update_image(rid, kind=v.get()),
                                                                  cb.selection_clear()))
             ConfirmButton(line, command=lambda rid=r["id"]: self.card.delete_image(rid), text="Remove",
                           armed_text="Click again", bg=theme.PANEL2).pack(side="right")
@@ -421,8 +420,8 @@ class TradeCard(tk.Frame):
                  anchor="w").pack(fill="x", pady=(top, 5))
 
     def bind_active(self, widget):
-        widget.bind("<FocusIn>", lambda e: self.tab.set_active(self), add="+")
-        widget.bind("<Button-1>", lambda e: self.tab.set_active(self), add="+")
+        widget.bind("<FocusIn>", lambda e=None: self.tab.set_active(self), add="+")
+        widget.bind("<Button-1>", lambda e=None: self.tab.set_active(self), add="+")
         for child in widget.winfo_children():
             self.bind_active(child)
 
@@ -485,11 +484,10 @@ class TradeCard(tk.Frame):
         self.strip.configure(bg=OUT_COLORS.get(self.vars["outcome"].get(), theme.MUTED))
 
     def _update_cl_label(self, verdict, score):
-        if not verdict:
+        if not verdict or verdict == "none" or score is None:
             self.cl_lbl.configure(text="no record", fg=theme.MUTED)
         else:
-            pct = f"  ({score:.0f}%)" if score is not None else ""
-            self.cl_lbl.configure(text=VERDICT_LABELS.get(verdict, verdict) + pct,
+            self.cl_lbl.configure(text=f"{score:.0f}% of steps done",
                                   fg=theme.VERDICT_COLORS.get(verdict, theme.MUTED))
 
     # ============================================================ DONE (read-only) MODE
@@ -520,11 +518,9 @@ class TradeCard(tk.Frame):
         res = (row.get("result_r") or "").strip()
         tk.Label(head, text=out.upper() + (f"   {res}" if res else ""), bg=theme.PANEL, fg=color,
                  font=(ui, 13, "bold")).pack(side="right", padx=(0, 18))
-        verdict = row.get("cl_verdict")
-        if verdict:
-            score = row.get("cl_score")
-            pct = f" ({score:.0f}%)" if score is not None else ""
-            tk.Label(head, text="Checklist: " + VERDICT_LABELS.get(verdict, verdict) + pct, bg=theme.PANEL,
+        verdict, score = row.get("cl_verdict"), row.get("cl_score")
+        if verdict and verdict != "none" and score is not None:
+            tk.Label(head, text=f"Checklist: {score:.0f}% done", bg=theme.PANEL,
                      fg=theme.VERDICT_COLORS.get(verdict, theme.MUTED), font=(ui, 9, "bold")).pack(
                 side="right", padx=(0, 18))
 
@@ -549,7 +545,7 @@ class TradeCard(tk.Frame):
                 val = tk.Label(tile, text=value, bg=theme.PANEL2, fg=theme.FG, font=(ui, 11), anchor="w",
                                justify="left", wraplength=220)
                 val.pack(fill="x", padx=10, pady=(1, 7))
-                tile.bind("<Configure>", lambda e, l=val: l.configure(wraplength=max(100, e.width - 24)))
+                tile.bind("<Configure>", lambda e=None, l=val: l.configure(wraplength=max(100, e.width - 24)))
 
         # --- screenshots (read-only, three per row)
         images = self.db.list_images(self.id)
@@ -572,7 +568,7 @@ class TradeCard(tk.Frame):
         t.insert("1.0", text)
         bind_autosize(t, 1, 60)
         t.configure(state="disabled")
-        t.bind("<Button-1>", lambda e: t.focus_set())          # so Ctrl+C works on selected text
+        t.bind("<Button-1>", lambda e=None: t.focus_set())          # so Ctrl+C works on selected text
         t.pack(fill="x")
 
     # ------------------------------------------------------------- images
@@ -672,12 +668,12 @@ class JournalTab(ttk.Frame):
         cb = ttk.Combobox(bar, textvariable=self.f_outcome, values=["All"] + OUTCOMES, state="readonly", width=8,
                           exportselection=False)
         cb.pack(side="left")
-        cb.bind("<<ComboboxSelected>>", lambda e: (cb.selection_clear(), self._filters_changed()))
+        cb.bind("<<ComboboxSelected>>", lambda e=None: (cb.selection_clear(), self._filters_changed()))
         ttk.Label(bar, text="Search:", style="Muted.TLabel").pack(side="left", padx=(16, 6))
         self.f_search = tk.StringVar()
         ent = ttk.Entry(bar, textvariable=self.f_search, width=28)
         ent.pack(side="left")
-        ent.bind("<KeyRelease>", lambda e: self._search_debounce())
+        ent.bind("<KeyRelease>", lambda e=None: self._search_debounce())
         self.stats_lbl = ttk.Label(bar, text="", style="Muted.TLabel")
         self.stats_lbl.pack(side="right")
         self.feed = ScrollFrame(self, bg=theme.BG)

@@ -1,145 +1,89 @@
 """Pre-Trade Checklist tab.
 
-Every item is a *requirement*: you write the requirement, then each day you explain in writing why it is
-met and confirm it. Everything is edited directly on the page (no dialogs):
-  - type under a section + Enter  -> adds a requirement
-  - type in the bottom field      -> adds a section
-  - drag the grip (⠿)             -> reorder requirements (also between sections) and sections
-  - click ★                       -> mark a requirement as required
-  - "+ Add choices" on a section  -> a "pick one" block (e.g. market phase: Expansion / Retracement / ...):
-                                     every option carries a short reminder text, and each day you select one
+The page is built from sections. Every section has *options* (pick one, e.g. market phase: Expansion /
+Retracement / ...) and every option has *steps* (what you do on the chart when it applies). Everything is
+edited directly on the page:
+  - "+ Choice" under a section      -> adds an option;  "+ Add step" inside an option -> adds a step
+  - ✕ (click twice)                 -> deletes an option / step / section
+  - "Select" on an option card      -> that option applies today
+  - "Today's checklist" (bottom)    -> the steps of the options you selected; tick each one as you do it
 This tab is intentionally independent from the calendar.
 """
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import date, timedelta
 from tkinter import ttk
 
 from . import theme
-from .checklist_model import (VERDICT_LABELS, coerce_answers, coerce_choices, evaluate, load_template,
-                              new_id, save_template)
-from .widgets import ConfirmButton, PlaceholderEntry, ScrollFrame, bind_autosize
+from .checklist_model import (coerce_answers, coerce_choices, evaluate, load_template, new_id,
+                              save_template, selected_steps)
+from .widgets import ConfirmButton, ScrollFrame, bind_autosize
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December"]
-CONFIRMED_BORDER = "#245c3b"
+OPTION_COLUMNS = 4
 
 
-class RequirementCard(tk.Frame):
-    def __init__(self, master, tab, si, ii, item, answer):
-        super().__init__(master, bg=theme.PANEL2, highlightthickness=1, highlightbackground=theme.BORDER)
-        self.tab, self.item, self.ans = tab, item, answer
-        ui = theme.F["ui"]
+class QuietAdd(tk.Frame):
+    """A quiet "+ Something" link that turns into a one-line input when clicked (Enter adds, Esc cancels)."""
 
-        self.strip = tk.Frame(self, bg=theme.BORDER, width=5)
-        self.strip.pack(side="left", fill="y")
-        body = tk.Frame(self, bg=theme.PANEL2)
-        body.pack(side="left", fill="both", expand=True, padx=(10, 12), pady=10)
-
-        head = tk.Frame(body, bg=theme.PANEL2)
-        head.pack(fill="x")
-        self.handle = tk.Label(head, text="⠿", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 15), cursor="fleur")
-        self.handle.pack(side="left", anchor="n", padx=(0, 8))
-        self.handle.bind("<ButtonPress-1>", lambda e: tab.drag_start("item", si, ii, e))
-        self.handle.bind("<B1-Motion>", tab.drag_motion)
-        self.handle.bind("<ButtonRelease-1>", tab.drag_end)
-
-        ConfirmButton(head, command=lambda: tab.delete_item(si, ii), bg=theme.PANEL2).pack(side="right", anchor="n")
-        self.star = tk.Label(head, bg=theme.PANEL2, font=(ui, 14), cursor="hand2")
-        self.star.pack(side="right", anchor="n", padx=(4, 4))
-        self.star.bind("<Button-1>", lambda e: self._toggle_required())
-
-        self.title = tk.Text(head, height=1, width=10)
-        theme.style_text(self.title, (ui, 12, "bold"))
-        self.title.configure(bg=theme.PANEL2, highlightbackground=theme.PANEL2, padx=2, pady=2)
-        self.title.pack(side="left", fill="x", expand=True)
-        self.title.insert("1.0", item["text"])
-        bind_autosize(self.title, 1, 8)
-        self.title.bind("<KeyRelease>", lambda e: tab.item_text_changed(item, self.title.get("1.0", "end-1c")), add="+")
-        self.title.bind("<Return>", lambda e: (self.note.focus_set(), "break")[1])
-        self.title.bind("<FocusOut>", self._title_focus_out)
-
-        tk.Label(body, text="YOUR EXPLANATION", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 8, "bold"),
-                 anchor="w").pack(fill="x", pady=(10, 3))
-        self.note = tk.Text(body, height=3, width=10)
-        theme.style_text(self.note, (ui, 10))
-        self.note.pack(fill="x")
-        self.note.insert("1.0", answer["note"])
-        bind_autosize(self.note, 3, 20)
-        self.note.bind("<KeyRelease>", self._note_changed, add="+")
-
-        foot = tk.Frame(body, bg=theme.PANEL2)
-        foot.pack(fill="x", pady=(8, 0))
-        self.btn = ttk.Button(foot, command=self._toggle_confirm)
+    def __init__(self, master, label, on_submit, bg=theme.PANEL):
+        super().__init__(master, bg=bg)
+        self.bg, self.on_submit, self.entry, self.hint = bg, on_submit, None, None
+        self.btn = tk.Label(self, text=label, bg=bg, fg=theme.MUTED, font=(theme.F["ui"], 10), cursor="hand2",
+                            padx=6, pady=3)
         self.btn.pack(side="left")
-        self.msg = tk.Label(foot, text="", bg=theme.PANEL2, fg=theme.ORANGE, font=(ui, 9))
-        self.msg.pack(side="left", padx=10)
-        self.status = tk.Label(foot, bg=theme.PANEL2, font=(ui, 9, "bold"))
-        self.status.pack(side="right")
-        self.apply_state()
+        self.btn.bind("<Button-1>", lambda e=None: self.open())
+        self.btn.bind("<Enter>", lambda e=None: self.btn.configure(fg=theme.FG))
+        self.btn.bind("<Leave>", lambda e=None: self.btn.configure(fg=theme.MUTED))
 
-    # ----------------------------------------------------------- state
-    def apply_state(self):
-        confirmed = self.ans["confirmed"]
-        required = self.item["required"]
-        self.star.configure(text="★" if required else "☆", fg=theme.ORANGE if required else theme.MUTED)
-        if confirmed:
-            self.strip.configure(bg=theme.GREEN)
-            self.configure(highlightbackground=CONFIRMED_BORDER)
-            self.btn.configure(text="Undo", style="TButton")
-            self.status.configure(text="✓ CONFIRMED", fg=theme.GREEN)
+    def open(self):
+        if self.entry is not None:
+            self.entry.focus_set()
+            return
+        self.btn.pack_forget()
+        field_bg = theme.PANEL if self.bg == theme.PANEL2 else theme.PANEL2
+        self.entry = tk.Entry(self, bg=field_bg, fg=theme.FG, insertbackground=theme.FG, relief="flat",
+                              highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
+                              font=(theme.F["ui"], 10), selectbackground=theme.ACCENT, selectforeground="white")
+        self.entry.pack(side="left", fill="x", expand=True, ipady=3)
+        self.hint = tk.Label(self, text="Enter to add · Esc to cancel", bg=self.bg, fg=theme.MUTED,
+                             font=(theme.F["ui"], 9))
+        self.hint.pack(side="left", padx=(8, 0))
+        self.entry.bind("<Return>", self._submit)
+        self.entry.bind("<Escape>", lambda e=None: self.close())
+        self.entry.bind("<FocusOut>", self._focus_out)
+        self.entry.focus_set()
+
+    def close(self):
+        if self.entry is None:
+            return
+        try:
+            self.entry.destroy()
+            self.hint.destroy()
+            self.btn.pack(side="left")
+        except tk.TclError:
+            pass
+        self.entry = self.hint = None
+
+    def _focus_out(self, _e=None):
+        try:
+            if self.entry is not None and not self.entry.get().strip():
+                self.close()
+        except tk.TclError:
+            pass
+
+    def _submit(self, _e=None):
+        text = self.entry.get().strip() if self.entry is not None else ""
+        if text:
+            self.on_submit(text)
         else:
-            self.strip.configure(bg=theme.ORANGE if required else theme.BORDER)
-            self.configure(highlightbackground=theme.BORDER)
-            self.btn.configure(text="Confirm ✓", style="Accent.TButton")
-            self.status.configure(text="REQUIRED · PENDING" if required else "PENDING",
-                                  fg=theme.ORANGE if required else theme.MUTED)
-
-    def _toggle_required(self):
-        self.item["required"] = not self.item["required"]
-        self.apply_state()
-        self.tab.structure_light_change()
-
-    def _title_focus_out(self, _e=None):
-        if not self.title.get("1.0", "end-1c").strip():          # never leave a requirement empty
-            self.title.delete("1.0", "end")
-            self.title.insert("1.0", self.item["text"])
-
-    def _note_changed(self, _e=None):
-        text = self.note.get("1.0", "end-1c")
-        self.ans["note"] = text
-        if self.ans["confirmed"] and not text.strip():           # explanation removed -> no longer confirmed
-            self.ans["confirmed"] = False
-            self.apply_state()
-        self.tab.answers_changed()
-
-    def _toggle_confirm(self):
-        if not self.ans["confirmed"]:
-            if not self.ans["note"].strip():
-                self._flash("Write your explanation first.")
-                return
-            self.ans["confirmed"] = True
-        else:
-            self.ans["confirmed"] = False
-        self.apply_state()
-        self.tab.answers_changed(immediate=True)
-
-    def _flash(self, text):
-        self.note.configure(highlightbackground=theme.RED)
-        self.msg.configure(text=text)
-        self.note.focus_set()
-
-        def reset():
-            try:
-                self.note.configure(highlightbackground=theme.BORDER)
-                self.msg.configure(text="")
-            except tk.TclError:
-                pass
-        self.after(1600, reset)
+            self.close()
 
 
 class OptionCard(tk.Frame):
-    """One "pick one" choice: a name, a short reminder of what it means, and a Select button."""
+    """One option: a name, its steps (add / edit / delete) and a Select button."""
 
     def __init__(self, master, tab, si, oi, option, selected):
         super().__init__(master, bg=theme.PANEL2, highlightthickness=2, highlightbackground=theme.BORDER)
@@ -147,6 +91,8 @@ class OptionCard(tk.Frame):
         ui = theme.F["ui"]
         body = tk.Frame(self, bg=theme.PANEL2)
         body.pack(fill="both", expand=True, padx=12, pady=10)
+        self.btn = ttk.Button(body, command=lambda: tab.select_option(si, oi))
+        self.btn.pack(side="bottom", anchor="w", pady=(10, 0))
 
         head = tk.Frame(body, bg=theme.PANEL2)
         head.pack(fill="x")
@@ -159,22 +105,42 @@ class OptionCard(tk.Frame):
                               selectbackground=theme.ACCENT, selectforeground="white")
         self.title.insert(0, option["title"])
         self.title.pack(side="left", fill="x", expand=True)
-        self.title.bind("<KeyRelease>", lambda e: tab.option_title_changed(option, self.title.get()))
+        self.title.bind("<KeyRelease>", lambda e=None: tab.option_title_changed(option, self.title.get()))
         self.title.bind("<FocusOut>", self._title_focus_out)
 
-        tk.Label(body, text="WHAT IT MEANS — YOUR REMINDER", bg=theme.PANEL2, fg=theme.MUTED,
-                 font=(ui, 8, "bold"), anchor="w").pack(fill="x", pady=(8, 3))
-        self.desc = tk.Text(body, height=3, width=10)
-        theme.style_text(self.desc, (ui, 10))
-        self.desc.pack(fill="x")
-        self.desc.insert("1.0", option.get("desc", ""))
-        bind_autosize(self.desc, 3, 14)
-        self.desc.bind("<KeyRelease>", lambda e: tab.option_desc_changed(option, self.desc.get("1.0", "end-1c")),
-                       add="+")
-
-        self.btn = ttk.Button(body, command=lambda: tab.select_option(si, oi))
-        self.btn.pack(anchor="w", pady=(8, 0))
+        tk.Label(body, text="STEPS", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 8, "bold"),
+                 anchor="w").pack(fill="x", pady=(8, 3))
+        self.adder = QuietAdd(body, "+ Add step", lambda text: tab.add_step(si, oi, text), bg=theme.PANEL2)
+        self.adder.pack(side="bottom", fill="x")
+        steps = tk.Frame(body, bg=theme.PANEL2)
+        steps.pack(fill="x")
+        for k, st in enumerate(option["steps"]):
+            self._step_row(steps, si, oi, k, st)
         self.apply_state(selected)
+
+    def _step_row(self, parent, si, oi, k, step):
+        ui = theme.F["ui"]
+        row = tk.Frame(parent, bg=theme.PANEL2)
+        row.pack(fill="x", pady=2)
+        tk.Label(row, text=f"{k + 1}.", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 10), width=2,
+                 anchor="ne").pack(side="left", anchor="n", pady=(5, 0))
+        ConfirmButton(row, command=lambda: self.tab.delete_step(si, oi, k), bg=theme.PANEL2).pack(
+            side="right", anchor="n")
+        txt = tk.Text(row, height=1, width=10)
+        theme.style_text(txt, (ui, 10))
+        txt.configure(padx=6, pady=3)
+        txt.pack(side="left", fill="x", expand=True)
+        txt.insert("1.0", step["text"])
+        bind_autosize(txt, 1, 6)
+        txt.bind("<KeyRelease>", lambda e=None: self.tab.step_text_changed(step, txt.get("1.0", "end-1c")), add="+")
+        txt.bind("<Return>", lambda e=None: (self.adder.open(), "break")[1])     # Enter: next step, no newline
+        txt.bind("<FocusOut>", lambda e=None: self._step_focus_out(step, txt))
+
+    @staticmethod
+    def _step_focus_out(step, txt):
+        if not txt.get("1.0", "end-1c").strip():             # never leave a step empty
+            txt.delete("1.0", "end")
+            txt.insert("1.0", step["text"])
 
     def apply_state(self, selected):
         if selected:
@@ -189,7 +155,7 @@ class OptionCard(tk.Frame):
             self.btn.configure(text="Select", style="Pick.TButton")
 
     def _title_focus_out(self, _e=None):
-        if not self.title.get().strip():                          # never leave a choice without a name
+        if not self.title.get().strip():                          # never leave an option without a name
             self.title.delete(0, "end")
             self.title.insert(0, self.option["title"])
 
@@ -200,21 +166,18 @@ class ChecklistTab(ttk.Frame):
         self.db = db
         self.template = load_template()
         self.day = date.today()
-        self.answers = {}                 # item_id -> {"note": str, "confirmed": bool}
+        self.answers = {}                 # step_id -> {"note": "", "confirmed": bool}
         self.choices = {}                 # section_id -> option_id (the option picked for the day)
-        self._sec_frames, self._sec_headers, self._item_cards = [], [], []
-        self._item_frames, self._opt_cards = [], []
-        self._count_lbls, self._add_entries = [], []
-        self._slots, self._drag, self._drag_job, self._last_y = [], None, None, 0
+        self._opt_cards, self._sec_adders = [], []
         self._tpl_job = self._day_job = None
-        self.indicator = None
+        self._today_box = None
+        self._f_done = None
         self._build()
         self.load_day(self.day)
 
     # ------------------------------------------------------------------ UI
     def _build(self):
-        ui = theme.F["ui"]
-        bar = ttk.Frame(self, padding=(12, 10, 12, 6))
+        bar = ttk.Frame(self, padding=(12, 10, 12, 8))
         bar.pack(fill="x")
         ttk.Button(bar, text="◀", width=3, command=lambda: self._shift(-1)).pack(side="left")
         self.date_lbl = ttk.Label(bar, text="", style="Title.TLabel", width=34, anchor="center")
@@ -223,30 +186,6 @@ class ChecklistTab(ttk.Frame):
         ttk.Button(bar, text="Today", command=self._go_today).pack(side="left", padx=(10, 0))
         ConfirmButton(bar, command=self._reset_day, text="Reset day", armed_text="Click again to reset",
                       bg=theme.BG).pack(side="right")
-
-        self.banner = tk.Frame(self, bg=theme.PANEL2, highlightthickness=1, highlightbackground=theme.BORDER)
-        self.banner.pack(fill="x", padx=12, pady=(0, 8))
-        self.verdict_lbl = tk.Label(self.banner, text="", bg=theme.PANEL2, fg=theme.MUTED,
-                                    font=(ui, 20, "bold"), padx=18, pady=10)
-        self.verdict_lbl.pack(side="left")
-        self.detail_lbl = tk.Label(self.banner, text="", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 10),
-                                   justify="left")
-        self.detail_lbl.pack(side="left", padx=10)
-        thr = tk.Frame(self.banner, bg=theme.PANEL2)
-        thr.pack(side="right", padx=14)
-        tk.Label(thr, text="Clear ≥", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 9)).pack(side="left")
-        self.sp_g = ttk.Spinbox(thr, from_=0, to=100, width=4, command=self._thresholds_changed)
-        self.sp_g.pack(side="left", padx=(4, 12))
-        tk.Label(thr, text="Caution ≥", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 9)).pack(side="left")
-        self.sp_y = ttk.Spinbox(thr, from_=0, to=100, width=4, command=self._thresholds_changed)
-        self.sp_y.pack(side="left", padx=(4, 0))
-        tk.Label(thr, text="%", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 9)).pack(side="left", padx=(2, 0))
-        self.sp_g.set(self.template["threshold_green"])
-        self.sp_y.set(self.template["threshold_yellow"])
-        for sp in (self.sp_g, self.sp_y):
-            sp.bind("<Return>", self._thresholds_changed)
-            sp.bind("<FocusOut>", self._thresholds_changed)
-
         self.scroll = ScrollFrame(self, bg=theme.PANEL)
         self.scroll.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
@@ -257,38 +196,38 @@ class ChecklistTab(ttk.Frame):
         inner = self.scroll.inner
         for w in inner.winfo_children():
             w.destroy()
-        self._sec_frames, self._sec_headers, self._item_cards = [], [], []
-        self._item_frames, self._opt_cards = [], []
-        self._count_lbls, self._add_entries = [], []
-        self.indicator = tk.Frame(inner, bg=theme.ACCENT, height=3)
+        self._opt_cards, self._sec_adders, self._today_box = [], [], None
 
-        tk.Label(inner, text="Drag ⠿ to reorder  ·  ★ marks a requirement as required  ·  "
-                             "type below a section and press Enter to add  ·  "
-                             "“+ Add choices” gives a section a pick-one block",
-                 bg=theme.PANEL, fg=theme.MUTED, font=(theme.F["ui"], 9), anchor="w").pack(fill="x", padx=18, pady=(10, 0))
-
+        tk.Label(inner, text="Pick one option per section. The steps of the options you pick appear in "
+                             "“Today's checklist” at the bottom: tick each one as you do it.",
+                 bg=theme.PANEL, fg=theme.MUTED, font=(theme.F["ui"], 9), anchor="w").pack(
+            fill="x", padx=18, pady=(10, 0))
         for si, sec in enumerate(self.template["sections"]):
             self._build_section(si, sec)
+        QuietAdd(inner, "+ New section", self.add_section).pack(fill="x", padx=16, pady=(14, 6), anchor="w")
 
-        tk.Label(inner, text="NEW SECTION", bg=theme.PANEL, fg=theme.MUTED, font=(theme.F["ui"], 8, "bold"),
-                 anchor="w").pack(fill="x", padx=18, pady=(22, 3))
-        self.add_section_entry = PlaceholderEntry(inner, "+ Add a section — type a title and press Enter",
-                                                  on_submit=self.add_section)
-        self.add_section_entry.pack(fill="x", padx=16, pady=(0, 28), ipady=7)
-        self.update_counts()
+        self._today_box = tk.Frame(inner, bg=theme.PANEL2, highlightthickness=1, highlightbackground=theme.BORDER)
+        self._today_box.pack(fill="x", padx=16, pady=(8, 28))
+        self._fill_today()
 
         def finish():
             try:
                 canvas.yview_moveto(y0)
-                if isinstance(focus, int) and 0 <= focus < len(self._add_entries):
-                    self._add_entries[focus].focus_set()
-                    self.scroll.see(self._add_entries[focus])
-                elif isinstance(focus, tuple) and focus[0] == "option":        # ("option", si, oi)
-                    card = self._opt_cards[focus[1]][focus[2]]
-                    card.title.focus_set()
-                    card.title.select_range(0, "end")
-                    self.scroll.see(card)
-            except tk.TclError:
+                if focus:
+                    kind, si = focus[0], focus[1]
+                    if kind == "choice_add":
+                        w = self._sec_adders[si]
+                    elif kind == "step_add":
+                        w = self._opt_cards[si][focus[2]].adder
+                    else:                                                      # "option_title"
+                        w = self._opt_cards[si][focus[2]]
+                    if kind == "option_title":
+                        w.title.focus_set()
+                        w.title.select_range(0, "end")
+                    else:
+                        w.open()
+                    self.scroll.see(w)
+            except (tk.TclError, IndexError):
                 pass
         self.after(40, finish)
 
@@ -298,105 +237,155 @@ class ChecklistTab(ttk.Frame):
         sf.pack(fill="x", padx=16, pady=(16, 0))
         hdr = tk.Frame(sf, bg=theme.PANEL)
         hdr.pack(fill="x")
-
-        handle = tk.Label(hdr, text="⠿", bg=theme.PANEL, fg=theme.MUTED, font=(ui, 15), cursor="fleur")
-        handle.pack(side="left", padx=(0, 8))
-        handle.bind("<ButtonPress-1>", lambda e: self.drag_start("section", si, None, e))
-        handle.bind("<B1-Motion>", self.drag_motion)
-        handle.bind("<ButtonRelease-1>", self.drag_end)
-
         ConfirmButton(hdr, command=lambda: self.delete_section(si), text="Delete section",
                       armed_text="Click again to delete", bg=theme.PANEL).pack(side="right")
-        count = tk.Label(hdr, text="", bg=theme.PANEL, fg=theme.MUTED, font=(ui, 10))
-        count.pack(side="right", padx=10)
+        for text, delta in (("▼", 1), ("▲", -1)):                   # move the section down / up
+            lbl = tk.Label(hdr, text=text, bg=theme.PANEL, fg=theme.MUTED, font=(ui, 10), cursor="hand2", padx=5)
+            lbl.pack(side="right")
+            lbl.bind("<Button-1>", lambda e=None, d=delta: self.move_section(si, d))
         title = tk.Entry(hdr, bg=theme.PANEL, fg=theme.ACCENT, insertbackground=theme.FG, relief="flat",
                          highlightthickness=1, highlightbackground=theme.PANEL, highlightcolor=theme.ACCENT,
-                         font=(ui, 13, "bold"))
+                         font=(ui, 13, "bold"), selectbackground=theme.ACCENT, selectforeground="white")
         title.insert(0, sec["title"])
         title.pack(side="left", fill="x", expand=True)
-        title.bind("<KeyRelease>", lambda e: self._section_title_changed(sec, title))
-        title.bind("<FocusOut>", lambda e: self._section_title_focus_out(sec, title))
-        tk.Frame(sf, bg=theme.BORDER, height=1).pack(fill="x", pady=(5, 6))
+        title.bind("<KeyRelease>", lambda e=None: self._section_title_changed(sec, title))
+        title.bind("<FocusOut>", lambda e=None: self._section_title_focus_out(sec, title))
+        tk.Frame(sf, bg=theme.BORDER, height=1).pack(fill="x", pady=(5, 8))
 
-        opt_cards = self._build_choices(sf, si, sec)
-
-        items_frame = tk.Frame(sf, bg=theme.PANEL)
-        items_frame.pack(fill="x")
         cards = []
-        for ii, it in enumerate(sec["items"]):
-            ans = self.answers.setdefault(it["id"], {"note": "", "confirmed": False})
-            card = RequirementCard(items_frame, self, si, ii, it, ans)
-            card.pack(fill="x", pady=4)
-            cards.append(card)
-        foot = tk.Frame(sf, bg=theme.PANEL)
-        foot.pack(fill="x", pady=(6, 0))
-        if not sec["options"]:
-            ttk.Button(foot, text="+ Add choices", command=lambda s=si: self.add_option(s, "Option 1")).pack(
-                side="right", padx=(8, 0))
-        add = PlaceholderEntry(foot, "+ Add a requirement — type it and press Enter",
-                               on_submit=lambda text, s=si: self.add_item(s, text))
-        add.pack(side="left", fill="x", expand=True, ipady=6)
-
-        self._sec_frames.append(sf)
-        self._sec_headers.append(hdr)
-        self._item_frames.append(items_frame)
-        self._opt_cards.append(opt_cards)
-        self._item_cards.append(cards)
-        self._count_lbls.append(count)
-        self._add_entries.append(add)
-
-    def _build_choices(self, sf, si, sec):
-        """The 'pick one' block of a section (nothing is drawn when the section has no choices)."""
-        cards = []
-        if not sec["options"]:
-            return cards
-        ui = theme.F["ui"]
         chosen = self.choices.get(sec["id"])
-        tk.Label(sf, text="CHOOSE ONE  ·  click Select on the option that applies today",
-                 bg=theme.PANEL, fg=theme.MUTED, font=(ui, 8, "bold"), anchor="w").pack(fill="x", pady=(2, 4))
-        grid = tk.Frame(sf, bg=theme.PANEL)
-        grid.pack(fill="x")
-        n = len(sec["options"])
-        ncols = n if n <= 4 else 3
-        for c in range(ncols):
-            grid.columnconfigure(c, weight=1, uniform=f"opt{si}")
-        for oi, opt in enumerate(sec["options"]):
-            card = OptionCard(grid, self, si, oi, opt, opt["id"] == chosen)
-            card.grid(row=oi // ncols, column=oi % ncols, sticky="nsew", padx=(0 if oi % ncols == 0 else 8, 0),
-                      pady=(0, 8))
-            cards.append(card)
-        add = PlaceholderEntry(sf, "+ Add another choice — type a name and press Enter",
-                               on_submit=lambda text, s=si: self.add_option(s, text))
-        add.pack(fill="x", pady=(0, 10), ipady=5)
-        return cards
+        if sec["options"]:
+            grid = tk.Frame(sf, bg=theme.PANEL)
+            grid.pack(fill="x")
+            for c in range(OPTION_COLUMNS):
+                grid.columnconfigure(c, weight=1, uniform=f"opt{si}")
+            for oi, opt in enumerate(sec["options"]):
+                card = OptionCard(grid, self, si, oi, opt, opt["id"] == chosen)
+                col = oi % OPTION_COLUMNS
+                card.grid(row=oi // OPTION_COLUMNS, column=col, sticky="nsew",
+                          padx=(0 if col == 0 else 8, 0), pady=(0, 8))
+                cards.append(card)
+        adder = QuietAdd(sf, "+ Choice", lambda text, s=si: self.add_option(s, text))
+        adder.pack(fill="x", pady=(0, 2), anchor="w")
+        self._opt_cards.append(cards)
+        self._sec_adders.append(adder)
+
+    # --------------------------------------------------- "Today's checklist" (bottom)
+    def _fill_today(self):
+        box = self._today_box
+        if box is None:
+            return
+        try:
+            for w in box.winfo_children():
+                w.destroy()
+        except tk.TclError:
+            return
+        ui = theme.F["ui"]
+        if self._f_done is None:
+            self._f_done = tkfont.Font(family=ui, size=11, overstrike=True)
+        steps = selected_steps(self.template, self.choices)
+        done = sum(1 for _s, _o, st in steps if self.answers.get(st["id"], {}).get("confirmed"))
+
+        inner = tk.Frame(box, bg=theme.PANEL2)
+        inner.pack(fill="x", padx=16, pady=14)
+        head = tk.Frame(inner, bg=theme.PANEL2)
+        head.pack(fill="x")
+        tk.Label(head, text="Today's checklist", bg=theme.PANEL2, fg=theme.FG, font=(ui, 13, "bold")).pack(side="left")
+        tk.Label(head, text=f"{done} of {len(steps)} done" if steps else "", bg=theme.PANEL2, fg=theme.MUTED,
+                 font=(ui, 10)).pack(side="right")
+        track = tk.Frame(inner, bg=theme.BORDER, height=5)
+        track.pack(fill="x", pady=(8, 6))
+        if steps:
+            tk.Frame(track, bg=theme.GREEN if done == len(steps) else theme.ACCENT, height=5).place(
+                x=0, y=0, relheight=1.0, relwidth=done / len(steps))
+        if not steps:
+            tk.Label(inner, text="Select an option in a section to see its steps here.", bg=theme.PANEL2,
+                     fg=theme.MUTED, font=(ui, 10), anchor="w").pack(fill="x", pady=(6, 0))
+        last = None
+        for sec in self.template["sections"]:
+            oid = self.choices.get(sec["id"])
+            opt = next((o for o in sec["options"] if o["id"] == oid), None)
+            if opt is None:
+                continue
+            g = tk.Frame(inner, bg=theme.PANEL2)
+            g.pack(fill="x", pady=(10, 2))
+            tk.Label(g, text=f"{sec['title']}  ·  ", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 9)).pack(side="left")
+            tk.Label(g, text=opt["title"], bg=theme.PANEL2, fg=theme.ACCENT, font=(ui, 9, "bold")).pack(side="left")
+            if not opt["steps"]:
+                tk.Label(inner, text="No steps yet. Add some in the option card above.", bg=theme.PANEL2,
+                         fg=theme.MUTED, font=(ui, 10), anchor="w").pack(fill="x")
+            for st in opt["steps"]:
+                last = self._step_check_row(inner, st)
+
+    def _step_check_row(self, parent, step):
+        ui = theme.F["ui"]
+        ticked = bool(self.answers.get(step["id"], {}).get("confirmed"))
+        row = tk.Frame(parent, bg=theme.PANEL2, cursor="hand2")
+        row.pack(fill="x")
+        mark = tk.Label(row, text="☑" if ticked else "☐", bg=theme.PANEL2, font=(ui, 14),
+                        fg=theme.GREEN if ticked else theme.MUTED, cursor="hand2")
+        mark.pack(side="left", padx=(0, 10), anchor="n")
+        txt = tk.Label(row, text=step["text"], bg=theme.PANEL2, fg=theme.MUTED if ticked else theme.FG,
+                       font=self._f_done if ticked else (ui, 11), anchor="w", justify="left", wraplength=600,
+                       cursor="hand2")
+        txt.pack(side="left", fill="x", expand=True, pady=4)
+        tk.Frame(parent, bg=theme.BORDER, height=1).pack(fill="x")
+        for w in (row, mark, txt):
+            w.bind("<Button-1>", lambda e=None, sid=step["id"]: self.toggle_step(sid))
+        row.bind("<Configure>", lambda e=None: txt.configure(wraplength=max(120, row.winfo_width() - 50)))
+        return row
+
+    def toggle_step(self, step_id):
+        a = self.answers.setdefault(step_id, {"note": "", "confirmed": False})
+        a["confirmed"] = not a["confirmed"]
+        self._fill_today()
+        self._save_day_soon()
 
     # ------------------------------------------------------- template edits
     def add_option(self, si, title):
-        opts = self.template["sections"][si].setdefault("options", [])
-        opts.append({"id": new_id(), "title": title, "desc": ""})
+        opts = self.template["sections"][si]["options"]
+        opts.append({"id": new_id(), "title": title, "steps": []})
         self._save_template_soon()
-        self._render(focus=("option", si, len(opts) - 1))
-        self._update_banner()
+        self._render(focus=("step_add", si, len(opts) - 1))
 
     def delete_option(self, si, oi):
         sec = self.template["sections"][si]
         opt = sec["options"].pop(oi)
         if self.choices.get(sec["id"]) == opt["id"]:
             del self.choices[sec["id"]]
-            self._save_day_now()
+        for st in opt["steps"]:
+            self.answers.pop(st["id"], None)
+        self._save_day_now()
         self._save_template_soon()
         self._render()
-        self._update_banner()
 
     def option_title_changed(self, option, text):
         t = text.strip()
         if t:
             option["title"] = t
             self._save_template_soon()
+            self._fill_today()
 
-    def option_desc_changed(self, option, text):
-        option["desc"] = text
+    def add_step(self, si, oi, text):
+        steps = self.template["sections"][si]["options"][oi]["steps"]
+        steps.append({"id": new_id(), "text": text.replace("\n", " ").strip()})
         self._save_template_soon()
+        self._render(focus=("step_add", si, oi))                 # keep the input open: add the next step right away
+
+    def delete_step(self, si, oi, k):
+        steps = self.template["sections"][si]["options"][oi]["steps"]
+        st = steps.pop(k)
+        self.answers.pop(st["id"], None)
+        self._save_day_now()
+        self._save_template_soon()
+        self._render()
+
+    def step_text_changed(self, step, text):
+        t = text.replace("\n", " ").strip()
+        if t:
+            step["text"] = t
+            self._save_template_soon()
+            self._fill_today()
 
     def select_option(self, si, oi):
         """Pick (or un-pick) today's option for a section. Updates the cards in place: no re-render."""
@@ -409,156 +398,39 @@ class ChecklistTab(ttk.Frame):
         chosen = self.choices.get(sec["id"])
         for card, o in zip(self._opt_cards[si], sec["options"]):
             card.apply_state(o["id"] == chosen)
+        self._fill_today()
         self._save_day_now()
 
-    def add_item(self, si, text):
-        self.template["sections"][si]["items"].append({"id": new_id(), "text": text, "required": False})
-        self._save_template_soon()
-        self._render(focus=si)
-        self._update_banner()
-
     def add_section(self, title):
-        self.template["sections"].append({"id": new_id(), "title": title, "items": []})
+        self.template["sections"].append({"id": new_id(), "title": title, "options": []})
         self._save_template_soon()
-        self._render(focus=len(self.template["sections"]) - 1)
-        self._update_banner()
-
-    def delete_item(self, si, ii):
-        del self.template["sections"][si]["items"][ii]
-        self._save_template_soon()
-        self._render()
-        self._update_banner()
+        self._render(focus=("choice_add", len(self.template["sections"]) - 1))
 
     def delete_section(self, si):
-        del self.template["sections"][si]
+        sec = self.template["sections"].pop(si)
+        self.choices.pop(sec["id"], None)
+        self._save_day_now()
         self._save_template_soon()
         self._render()
-        self._update_banner()
 
-    def item_text_changed(self, item, text):
-        t = text.strip()
-        if t:
-            item["text"] = t
+    def move_section(self, si, delta):
+        secs = self.template["sections"]
+        j = si + delta
+        if 0 <= j < len(secs):
+            secs[si], secs[j] = secs[j], secs[si]
             self._save_template_soon()
+            self._render()
 
     def _section_title_changed(self, sec, entry):
         t = entry.get().strip()
         if t:
             sec["title"] = t
             self._save_template_soon()
+            self._fill_today()
 
     def _section_title_focus_out(self, sec, entry):
         if not entry.get().strip():
             entry.insert(0, sec["title"])
-
-    def structure_light_change(self):
-        """Required flag toggled: no re-render needed."""
-        self._save_template_soon()
-        self._update_banner()
-
-    def _thresholds_changed(self, _e=None):
-        try:
-            g = max(0, min(100, int(self.sp_g.get())))
-            y = max(0, min(100, int(self.sp_y.get())))
-        except ValueError:
-            self.sp_g.set(self.template["threshold_green"])
-            self.sp_y.set(self.template["threshold_yellow"])
-            return
-        y = min(y, g)
-        self.template["threshold_green"], self.template["threshold_yellow"] = g, y
-        self.sp_g.set(g)
-        self.sp_y.set(y)
-        self._save_template_soon()
-        self._update_banner()
-
-    # -------------------------------------------------------------- drag & drop
-    def drag_start(self, kind, a, b, event):
-        self._drag = {"kind": kind, "si": a, "ii": b, "target": None}
-        self._last_y = event.y_root
-        self._compute_slots(kind)
-        if kind == "item":
-            try:
-                self._item_cards[a][b].configure(highlightbackground=theme.ACCENT)
-            except (IndexError, tk.TclError):
-                pass
-        self._drag_loop()
-
-    def drag_motion(self, event):
-        if self._drag:
-            self._last_y = event.y_root
-            self._drag_update(autoscroll=False)
-
-    def _drag_loop(self):
-        if not self._drag:
-            return
-        self._drag_update(autoscroll=True)
-        self._drag_job = self.after(60, self._drag_loop)
-
-    def _compute_slots(self, kind):
-        base = self.scroll.inner.winfo_rooty()
-        slots = []
-        if kind == "item":
-            for si, cards in enumerate(self._item_cards):
-                if not cards:
-                    slots.append((self._item_frames[si].winfo_rooty() - base + 4, si, 0))
-                for ii, c in enumerate(cards):
-                    slots.append((c.winfo_rooty() - base - 2, si, ii))
-                if cards:
-                    last = cards[-1]
-                    slots.append((last.winfo_rooty() + last.winfo_height() - base + 3, si, len(cards)))
-        else:
-            for si, sf in enumerate(self._sec_frames):
-                slots.append((sf.winfo_rooty() - base - 6, si))
-            if self._sec_frames:
-                last = self._sec_frames[-1]
-                slots.append((last.winfo_rooty() + last.winfo_height() - base + 6, len(self._sec_frames)))
-        self._slots = slots
-
-    def _drag_update(self, autoscroll):
-        if not self._drag or not self._slots:
-            return
-        canvas = self.scroll.canvas
-        if autoscroll:
-            top = canvas.winfo_rooty()
-            bottom = top + canvas.winfo_height()
-            if self._last_y < top + 50:
-                canvas.yview_scroll(-2, "units")
-            elif self._last_y > bottom - 50:
-                canvas.yview_scroll(2, "units")
-        y = self._last_y - self.scroll.inner.winfo_rooty()
-        best = min(self._slots, key=lambda s: abs(s[0] - y))
-        self._drag["target"] = best[1:]
-        self.indicator.place(x=14, y=int(best[0]) - 1, relwidth=1.0, width=-28, height=3)
-        self.indicator.lift()
-
-    def drag_end(self, _event=None):
-        d, self._drag = self._drag, None
-        if self._drag_job:
-            self.after_cancel(self._drag_job)
-            self._drag_job = None
-        try:
-            self.indicator.place_forget()
-        except tk.TclError:
-            pass
-        if not d or not d["target"]:
-            self._render()
-            return
-        secs = self.template["sections"]
-        if d["kind"] == "item":
-            tsi, tii = d["target"]
-            item = secs[d["si"]]["items"].pop(d["ii"])
-            if tsi == d["si"] and d["ii"] < tii:
-                tii -= 1
-            secs[tsi]["items"].insert(tii, item)
-        else:
-            tsi = d["target"][0]
-            sec = secs.pop(d["si"])
-            if d["si"] < tsi:
-                tsi -= 1
-            secs.insert(tsi, sec)
-        self._save_template_soon()
-        self._render()
-        self._update_banner()
 
     # ----------------------------------------------------------------- daily data
     def _date_key(self):
@@ -572,35 +444,6 @@ class ChecklistTab(ttk.Frame):
         self._render(keep_scroll=False)
         suffix = "  •  TODAY" if d == date.today() else ""
         self.date_lbl.configure(text=f"{DAYS[d.weekday()]}, {MONTHS[d.month - 1]} {d.day}, {d.year}{suffix}")
-        self._update_banner()
-
-    def answers_changed(self, immediate=False):
-        self.update_counts()
-        self._update_banner()
-        if immediate:
-            self._save_day_now()
-        else:
-            self._save_day_soon()
-
-    def update_counts(self):
-        for si, sec in enumerate(self.template["sections"]):
-            if si < len(self._count_lbls):
-                done = sum(1 for it in sec["items"] if self.answers.get(it["id"], {}).get("confirmed"))
-                self._count_lbls[si].configure(text=f"{done}/{len(sec['items'])} confirmed" if sec["items"] else "")
-
-    def _update_banner(self):
-        res = evaluate(self.template, self.answers)
-        key = res["verdict"]
-        color = theme.VERDICT_COLORS[key]
-        self.verdict_lbl.configure(text=VERDICT_LABELS[key], fg=color)
-        self.banner.configure(highlightbackground=color)
-        parts = [f"Confirmed: {res['checked']}/{res['total']}  ({res['pct']:.0f}%)"]
-        if res["req_total"]:
-            parts.append(f"Required ★: {res['req_checked']}/{res['req_total']}")
-            if not res["required_ok"]:
-                parts.append(f"{res['req_total'] - res['req_checked']} required still pending")
-        self.detail_lbl.configure(text="     ".join(parts))
-        return res
 
     def _save_day_soon(self):
         if self._day_job:
@@ -614,13 +457,13 @@ class ChecklistTab(ttk.Frame):
             except tk.TclError:
                 pass
             self._day_job = None
-        res = evaluate(self.template, self.answers)
-        clean = {k: v for k, v in self.answers.items() if v["note"].strip() or v["confirmed"]}
         choices = coerce_choices(self.choices, self.template)
+        res = evaluate(self.template, self.answers, choices)
+        step_ids = {st["id"] for sec in self.template["sections"] for o in sec["options"] for st in o["steps"]}
+        clean = {k: v for k, v in self.answers.items() if v["confirmed"] and k in step_ids}
         if not clean and not choices and not self.db.get_checklist_day(self._date_key()):
             return                                              # don't store empty days
-        self.db.save_checklist_day(self._date_key(), clean, choices, res["verdict"], res["pct"],
-                                   res["required_ok"])
+        self.db.save_checklist_day(self._date_key(), clean, choices, res["verdict"], res["pct"], True)
 
     def _save_template_soon(self):
         if self._tpl_job:

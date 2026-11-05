@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2
+- Checklist redesigned around options and steps:
+    - every option now holds its own **steps**; add, edit and delete them right inside the option card
+      (Enter in a step opens the next one)
+    - pick one option per section; the steps of the picked options appear at the bottom as
+      **Today's checklist** - tick each step as you do it on the chart (with a progress bar)
+    - removed: the verdict banner (CLEAR / CAUTION / NO TRADE), the star (required) marks and the separate
+      section requirements
+    - "+ Choice", "+ Add step" and "+ New section" are quiet links that open a one-line input
+    - sections are reordered with the small arrows next to "Delete section"
+- Your option reminder texts from 0.3.x become steps (one step per line); old section requirements are kept
+  as an option called "Checklist". Ticks are saved per day.
+- Journal: the checklist chip of a trade now reads "% of steps done".
+- Fixed a crash when adding a new section, and a rare error dialog when the screen redrew under the mouse.
+
 ## 0.3.1
 - Release workflow: release notes now come from this file instead of GitHub's note generator (which failed with a server error).
 - Includes everything from 0.3.0 (it was never published as a release):

@@ -165,7 +165,7 @@ class CalendarTab(ttk.Frame):
         self.notes.tag_configure("italic", font=(ui, 10, "italic"))
         for seq, tag in (("<Control-b>", "bold"), ("<Control-B>", "bold"),
                          ("<Control-i>", "italic"), ("<Control-I>", "italic")):
-            self.notes.bind(seq, lambda e, t=tag: self._toggle_tag(t))
+            self.notes.bind(seq, lambda e=None, t=tag: self._toggle_tag(t))
         self.notes.bind("<KeyRelease>", self._notes_changed)
 
         self.status = ttk.Label(self, text="", style="Muted.TLabel", padding=(12, 6))

@@ -4,38 +4,49 @@ from tradehub import checklist_model as cm
 
 
 def _tpl():
-    return cm.normalize(copy.deepcopy(cm.DEFAULT_TEMPLATE))
+    return cm.normalize(cm.default_template())
 
 
-def _ans(t, ids_true):
-    return {i["id"]: {"note": "x", "confirmed": i["id"] in ids_true} for i in cm.all_items(t)}
+def _all_step_ids(t):
+    return [st["id"] for s in t["sections"] for o in s["options"] for st in o["steps"]]
 
 
-def test_required_missing_forces_no_trade():
+def _tick(ids):
+    return {i: {"note": "", "confirmed": True} for i in ids}
+
+
+def test_default_template_is_valid_and_stable():
     t = _tpl()
-    optional = [i["id"] for i in cm.all_items(t) if not i["required"]]
-    res = cm.evaluate(t, _ans(t, optional))
-    assert res["verdict"] == "red" and not res["required_ok"]
+    assert any(len(s["options"]) >= 3 for s in t["sections"])
+    assert all(o["steps"] for s in t["sections"] for o in s["options"])
+    assert cm.normalize(copy.deepcopy(t)) == t
 
 
-def test_all_confirmed_is_green():
+def test_progress_only_counts_steps_of_selected_options():
     t = _tpl()
-    res = cm.evaluate(t, _ans(t, [i["id"] for i in cm.all_items(t)]))
-    assert res["verdict"] == "green" and res["pct"] == 100
+    s0, s1 = t["sections"][0], t["sections"][1]
+    choices = {s0["id"]: s0["options"][0]["id"], s1["id"]: s1["options"][0]["id"]}
+    n = len(s0["options"][0]["steps"]) + len(s1["options"][0]["steps"])
+    assert cm.evaluate(t, {}, choices)["total"] == n
+    assert [x[2]["id"] for x in cm.selected_steps(t, choices)] == [
+        st["id"] for st in s0["options"][0]["steps"] + s1["options"][0]["steps"]]
+    other = s0["options"][1]["steps"]                      # ticks of an option that is not selected don't count
+    assert cm.evaluate(t, _tick(st["id"] for st in other), choices)["checked"] == 0
 
 
 def test_thresholds():
-    t = _tpl()
-    t["sections"] = [{"id": "s", "title": "s", "items": [
-        {"id": str(n), "text": f"r{n}", "required": False} for n in range(10)]}]
-    assert cm.evaluate(t, _ans(t, [str(n) for n in range(8)]))["verdict"] == "green"     # 80%
-    assert cm.evaluate(t, _ans(t, [str(n) for n in range(6)]))["verdict"] == "yellow"    # 60%
-    assert cm.evaluate(t, _ans(t, [str(n) for n in range(5)]))["verdict"] == "red"       # 50%
+    t = {"sections": [{"id": "s", "title": "s", "options": [
+        {"id": "o", "title": "o", "steps": [{"id": str(n), "text": f"t{n}"} for n in range(10)]}]}]}
+    c = {"s": "o"}
+    assert cm.evaluate(t, _tick(str(n) for n in range(10)), c)["verdict"] == "green"
+    assert cm.evaluate(t, _tick(str(n) for n in range(8)), c)["verdict"] == "green"      # 80 %
+    assert cm.evaluate(t, _tick(str(n) for n in range(6)), c)["verdict"] == "yellow"     # 60 %
+    assert cm.evaluate(t, _tick(str(n) for n in range(5)), c)["verdict"] == "red"        # 50 %
 
 
-def test_empty_template():
-    t = cm.normalize({"sections": []})
-    assert cm.evaluate(t, {})["verdict"] == "none"
+def test_nothing_selected_is_none():
+    assert cm.evaluate(_tpl(), {}, {})["verdict"] == "none"
+    assert cm.evaluate(cm.normalize({"sections": []}), {}, {})["verdict"] == "none"
 
 
 def test_coerce_old_answers():
@@ -52,35 +63,50 @@ def test_load_save_and_corrupt(tmp_path):
     assert (tmp_path / "tpl.json.bak").exists()
 
 
-def test_normalize_drops_empty_items_and_old_hints():
-    t = cm.normalize({"sections": [{"title": "A", "items": [
-        {"text": "keep", "hint": "old"}, {"text": "   "}]}]})
-    assert [i["text"] for i in t["sections"][0]["items"]] == ["keep"]
-    assert "hint" not in t["sections"][0]["items"][0]
-
-
-def test_options_are_kept_and_cleaned():
-    t = cm.normalize({"sections": [{"title": "Phase", "items": [], "options": [
-        {"id": "a", "title": " Retracement ", "desc": "  pulling back  "},
-        {"title": "   ", "desc": "no name -> dropped"}, "junk", {"title": "Expansion"}]}]})
+def test_steps_and_options_are_cleaned():
+    t = cm.normalize({"sections": [{"title": "Phase", "options": [
+        {"id": "a", "title": " Retracement ", "steps": [{"id": "x", "text": " one "}, {"text": "  "}, "two", 5]},
+        {"title": "   ", "steps": ["dropped"]}, "junk", {"title": "Expansion"}]}]})
     opts = t["sections"][0]["options"]
     assert [o["title"] for o in opts] == ["Retracement", "Expansion"]
-    assert opts[0] == {"id": "a", "title": "Retracement", "desc": "pulling back"} and opts[1]["desc"] == ""
-    assert cm.normalize({"sections": [{"title": "x", "items": []}]})["sections"][0]["options"] == []   # old files
+    assert [s["text"] for s in opts[0]["steps"]] == ["one", "two", "5"] and opts[0]["steps"][0]["id"] == "x"
+    assert opts[1]["steps"] == []
+
+
+def test_upgrade_from_v03_reminder_text_keeps_ids_stable():
+    old = {"sections": [{"id": "s", "title": "Phase", "options": [
+        {"id": "o1", "title": "Expansion", "desc": "Determine the orange\n\nWait for a confirmation\n"}]}]}
+    a, b = cm.normalize(old), cm.normalize(old)
+    assert a == b                                           # same ids every time -> saved ticks keep matching
+    assert [s["text"] for s in a["sections"][0]["options"][0]["steps"]] == [
+        "Determine the orange", "Wait for a confirmation"]
+
+
+def test_upgrade_from_v02_requirements_are_kept_as_an_option():
+    old = {"threshold_green": 80, "sections": [{"id": "s", "title": "Market", "items": [
+        {"id": "i1", "text": "Bias is clear", "required": True}, {"id": "i2", "text": "   "}]}]}
+    t = cm.normalize(old)
+    opt = t["sections"][0]["options"][0]
+    assert opt["title"] == "Checklist" and [s["id"] for s in opt["steps"]] == ["i1"]
+    assert "items" not in t["sections"][0] and "threshold_green" not in t
+
+
+def test_old_file_is_rewritten_once_on_load(tmp_path):
+    import json
+    p = tmp_path / "tpl.json"
+    p.write_text(json.dumps({"sections": [{"id": "s", "title": "P", "options": [
+        {"id": "o", "title": "R", "desc": "a\nb"}]}]}), encoding="utf-8")
+    t = cm.load_template(p)
+    assert json.loads(p.read_text(encoding="utf-8")) == t
 
 
 def test_options_survive_save_and_load(tmp_path):
     p = tmp_path / "tpl.json"
     t = cm.load_template(p)
-    t["sections"][0]["options"].append({"id": "zz", "title": "Custom", "desc": "mine"})
+    t["sections"][0]["options"].append({"id": "zz", "title": "Custom", "steps": [{"id": "q", "text": "mine"}]})
     cm.save_template(t, p)
-    assert cm.load_template(p)["sections"][0]["options"][-1] == {"id": "zz", "title": "Custom", "desc": "mine"}
-
-
-def test_default_template_has_a_market_phase_example():
-    t = _tpl()
-    assert any(len(s["options"]) >= 3 for s in t["sections"])
-    assert cm.evaluate(t, {})["total"] == sum(len(s["items"]) for s in t["sections"])     # choices don't count
+    assert cm.load_template(p)["sections"][0]["options"][-1] == {
+        "id": "zz", "title": "Custom", "steps": [{"id": "q", "text": "mine"}]}
 
 
 def test_coerce_choices_drops_stale_ids():

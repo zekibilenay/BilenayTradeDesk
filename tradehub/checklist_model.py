@@ -1,9 +1,9 @@
 """Checklist template + evaluation logic (independent of the UI).
 
-A template is a list of sections; each section has requirements and (optionally) a set of *choices*
-("pick one" options, each with a short reminder text, e.g. market phase: Expansion / Retracement / ...).
-For every day, each requirement gets an answer: {"note": <your written explanation>, "confirmed": <bool>},
-and each section with choices can have one chosen option id.
+A template is a list of sections. Every section holds *options* ("pick one", e.g. market phase:
+Expansion / Retracement / ...) and every option holds *steps* (what you do on the chart when that option
+applies). For every day you pick one option per section; the steps of the picked options form the day's
+checklist, and you tick each step as you do it.
 """
 import copy
 import json
@@ -11,77 +11,79 @@ import uuid
 
 from .paths import CHECKLIST_TEMPLATE_PATH, atomic_write_text
 
+GREEN_AT = 80       # % of steps done -> green (shown next to a trade in the journal)
+YELLOW_AT = 60      # % of steps done -> yellow, below -> red
+
 
 def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-# Just examples - delete or rewrite them directly on the checklist page.
-DEFAULT_TEMPLATE = {
-    "version": 3,
-    "threshold_green": 80,      # % confirmed (and all required confirmed) -> CLEAR TO TRADE
-    "threshold_yellow": 60,     # % confirmed -> CAUTION, below -> NO TRADE
-    "sections": [
-        {"id": "ex_phase", "title": "Current market phase (example)", "items": [], "options": [
-            {"id": "ex_p1", "title": "Expansion",
-             "desc": "Strong, one-directional displacement. Don't fade it; wait for a pullback or stay out."},
-            {"id": "ex_p2", "title": "Retracement",
-             "desc": "Price is pulling back into a discount / premium zone inside a larger move. Look for continuation."},
-            {"id": "ex_p3", "title": "Reversal",
-             "desc": "Structure has shifted against the old trend. Needs confirmation before trusting it."},
-            {"id": "ex_p4", "title": "Consolidation",
-             "desc": "Tight range, no clear intent. Trade the edges only, or skip the day."},
-        ]},
-        {"id": "ex_market", "title": "Market conditions (example)", "items": [
-            {"id": "ex_1", "text": "Higher-timeframe bias is clear and I can state it in one sentence.", "required": True},
-            {"id": "ex_2", "text": "Liquidity and volatility are sufficient for my setup.", "required": False},
-        ]},
-        {"id": "ex_dxy", "title": "DXY (example)", "items": [
-            {"id": "ex_3", "text": "DXY gives a confirmation that agrees with my EURUSD idea.", "required": True},
-        ]},
-        {"id": "ex_me", "title": "Personal state (example)", "items": [
-            {"id": "ex_4", "text": "I know my maximum daily loss and I accept it before entering.", "required": True},
-        ]},
-    ],
-}
+def _steps(*texts):
+    return [{"id": new_id(), "text": t} for t in texts]
 
-VERDICT_LABELS = {
-    "green": "CLEAR TO TRADE",
-    "yellow": "CAUTION",
-    "red": "NO TRADE",
-    "none": "NO REQUIREMENTS YET",
-    "": "NO RECORD",
-}
+
+def default_template() -> dict:
+    """Just examples - rewrite them directly on the checklist page."""
+    return {"version": 4, "sections": [
+        {"id": "ex_phase", "title": "Current market phase (example)", "options": [
+            {"id": "ex_p1", "title": "Expansion", "steps": _steps(
+                "Mark the HTF zone", "Find the optimal entry zone for the next move",
+                "Wait for price to reach it", "Wait for a confirmation", "Enter with the LTF zone")},
+            {"id": "ex_p2", "title": "Retracement", "steps": _steps(
+                "Mark the HTF zone and the internal liquidity", "Wait for the liquidity to be taken")},
+            {"id": "ex_p3", "title": "Reversal", "steps": _steps(
+                "Wait for a structure shift", "Confirm before trusting it")},
+            {"id": "ex_p4", "title": "Consolidation", "steps": _steps("No trade: skip the day")},
+        ]},
+        {"id": "ex_time", "title": "What time is it? (example)", "options": [
+            {"id": "ex_t1", "title": "London open", "steps": _steps("Determine the current market phase")},
+            {"id": "ex_t2", "title": "New York open", "steps": _steps("Wait for a liquidity sweep")},
+            {"id": "ex_t3", "title": "Outside my hours", "steps": _steps("Do not trade")},
+        ]},
+    ]}
+
+
+def _clean_steps(raw, id_prefix=None) -> list:
+    """id_prefix gives upgraded (id-less) steps stable ids, so ticks saved for them survive a restart."""
+    out = []
+    for k, st in enumerate(raw or []):
+        if isinstance(st, dict):
+            text, sid = str(st.get("text", "")).strip(), st.get("id")
+        else:
+            text, sid = str(st).strip(), None
+        if text:
+            out.append({"id": str(sid or (f"{id_prefix}-s{k}" if id_prefix else new_id())), "text": text})
+    return out
 
 
 def normalize(t) -> dict:
-    out = {"version": 3, "threshold_green": 80, "threshold_yellow": 60, "sections": []}
+    """Cleans a template and upgrades older files:
+       * v0.3 options had one free-text reminder ("desc") -> every line becomes a step
+       * v0.2 sections had requirements ("items") -> they are kept as an option called "Checklist"."""
     if not isinstance(t, dict):
-        return copy.deepcopy(DEFAULT_TEMPLATE)
-    for key in ("threshold_green", "threshold_yellow"):
-        try:
-            out[key] = max(0, min(100, int(t.get(key, out[key]))))
-        except (TypeError, ValueError):
-            pass
+        return default_template()
+    out = {"version": 4, "sections": []}
     for s in t.get("sections", []) or []:
         if not isinstance(s, dict):
             continue
         sec = {"id": str(s.get("id") or new_id()), "title": str(s.get("title", "")).strip() or "Untitled section",
-               "items": [], "options": []}
-        for it in s.get("items", []) or []:
-            if not isinstance(it, dict):
-                continue
-            text = str(it.get("text", "")).strip()
-            if text:
-                sec["items"].append({"id": str(it.get("id") or new_id()), "text": text,
-                                     "required": bool(it.get("required", False))})
+               "options": []}
         for op in s.get("options", []) or []:
             if not isinstance(op, dict):
                 continue
             title = str(op.get("title", "")).strip()
-            if title:
-                sec["options"].append({"id": str(op.get("id") or new_id()), "title": title,
-                                       "desc": str(op.get("desc", "")).strip()})
+            if not title:
+                continue
+            oid = str(op.get("id") or new_id())
+            if "steps" in op:
+                steps = _clean_steps(op.get("steps"), oid)
+            else:
+                steps = _clean_steps(str(op.get("desc", "")).splitlines(), oid)
+            sec["options"].append({"id": oid, "title": title, "steps": steps})
+        legacy = _clean_steps(s.get("items"))
+        if legacy:
+            sec["options"].append({"id": f"{sec['id']}-legacy", "title": "Checklist", "steps": legacy})
         out["sections"].append(sec)
     return out
 
@@ -92,9 +94,13 @@ def save_template(t, path=CHECKLIST_TEMPLATE_PATH) -> None:
 
 def load_template(path=CHECKLIST_TEMPLATE_PATH) -> dict:
     try:
-        return normalize(json.loads(path.read_text(encoding="utf-8")))
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        t = normalize(raw)
+        if t != raw:                           # upgraded an older file: write it back once (stable ids)
+            save_template(t, path)
+        return t
     except FileNotFoundError:
-        t = copy.deepcopy(DEFAULT_TEMPLATE)
+        t = default_template()
         save_template(t, path)
         return t
     except Exception:
@@ -102,13 +108,13 @@ def load_template(path=CHECKLIST_TEMPLATE_PATH) -> dict:
             path.replace(path.with_suffix(".json.bak"))
         except Exception:
             pass
-        t = copy.deepcopy(DEFAULT_TEMPLATE)
+        t = default_template()
         save_template(t, path)
         return t
 
 
 def coerce_answers(raw) -> dict:
-    """Accepts the current format and the old v0.1 one ({id: bool})."""
+    """{step_id: {"note": str, "confirmed": bool}}; also accepts older formats ({id: bool})."""
     out = {}
     if not isinstance(raw, dict):
         return out
@@ -135,10 +141,15 @@ def coerce_choices(raw, t=None) -> dict:
     return out
 
 
-def all_items(t):
-    for s in t["sections"]:
-        for it in s["items"]:
-            yield it
+def selected_steps(t, choices):
+    """[(section, option, step)] for the options picked in `choices`, in page order."""
+    out = []
+    for sec in t["sections"]:
+        oid = choices.get(sec["id"])
+        for opt in sec.get("options", []):
+            if opt["id"] == oid:
+                out.extend((sec, opt, st) for st in opt["steps"])
+    return out
 
 
 def _confirmed(answer) -> bool:
@@ -147,24 +158,18 @@ def _confirmed(answer) -> bool:
     return bool(answer)
 
 
-def evaluate(t, answers) -> dict:
-    """A missing required requirement forces NO TRADE regardless of the percentage."""
-    items = list(all_items(t))
-    total = len(items)
-    checked = sum(1 for it in items if _confirmed(answers.get(it["id"])))
-    req = [it for it in items if it["required"]]
-    req_total = len(req)
-    req_checked = sum(1 for it in req if _confirmed(answers.get(it["id"])))
+def evaluate(t, answers, choices) -> dict:
+    """Progress of the day's checklist: how many of the picked options' steps are ticked."""
+    steps = selected_steps(t, choices)
+    total = len(steps)
+    checked = sum(1 for _s, _o, st in steps if _confirmed(answers.get(st["id"])))
     pct = (checked / total * 100.0) if total else 0.0
     if total == 0:
         verdict = "none"
-    elif req_checked < req_total:
-        verdict = "red"
-    elif pct >= t["threshold_green"]:
+    elif pct >= GREEN_AT:
         verdict = "green"
-    elif pct >= t["threshold_yellow"]:
+    elif pct >= YELLOW_AT:
         verdict = "yellow"
     else:
         verdict = "red"
-    return {"total": total, "checked": checked, "req_total": req_total, "req_checked": req_checked,
-            "pct": pct, "verdict": verdict, "required_ok": req_checked == req_total}
+    return {"total": total, "checked": checked, "pct": pct, "verdict": verdict, "required_ok": True}

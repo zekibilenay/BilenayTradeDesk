@@ -141,8 +141,8 @@ class ConfirmButton(tk.Label):
         self._cmd, self._text, self._armed_text, self._bg = command, text, armed_text, bg
         self._armed, self._job = False, None
         self.bind("<Button-1>", self._click)
-        self.bind("<Enter>", lambda e: None if self._armed else self.configure(fg=theme.RED))
-        self.bind("<Leave>", lambda e: None if self._armed else self.configure(fg=theme.MUTED))
+        self.bind("<Enter>", lambda e=None: None if self._armed else self.configure(fg=theme.RED))
+        self.bind("<Leave>", lambda e=None: None if self._armed else self.configure(fg=theme.MUTED))
 
     def _click(self, _e=None):
         if self._armed:
@@ -191,6 +191,6 @@ def autosize_text(txt, min_lines=1, max_lines=30):
 
 def bind_autosize(txt, min_lines=1, max_lines=30):
     txt.configure(height=min_lines)
-    txt.bind("<Configure>", lambda e: autosize_text(txt, min_lines, max_lines), add="+")
-    txt.bind("<KeyRelease>", lambda e: autosize_text(txt, min_lines, max_lines), add="+")
+    txt.bind("<Configure>", lambda e=None: autosize_text(txt, min_lines, max_lines), add="+")
+    txt.bind("<KeyRelease>", lambda e=None: autosize_text(txt, min_lines, max_lines), add="+")
     txt.after(50, lambda: autosize_text(txt, min_lines, max_lines))
