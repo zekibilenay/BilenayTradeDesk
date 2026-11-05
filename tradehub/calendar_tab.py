@@ -141,15 +141,8 @@ class CalendarTab(ttk.Frame):
         self.tree.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
-        mono = (theme.F["mono"], 10)
-        self.tree.tag_configure("day", background=theme.PANEL2, foreground=theme.FG, font=(ui, 10, "bold"))
-        self.tree.tag_configure("today", background=theme.PANEL2, foreground=theme.ACCENT, font=(ui, 10, "bold"))
-        colors = {"high": "#ff6b6b", "medium": "#f5b04c", "low": "#aab1bf"}
-        dim = {"high": "#8a4a4a", "medium": "#8a7040", "low": "#5d6575"}
-        for k in colors:
-            self.tree.tag_configure(f"{k}_future", foreground=colors[k], font=mono)
-            self.tree.tag_configure(f"{k}_past", foreground=dim[k], font=mono)
-            self.tree.tag_configure(f"{k}_soon", foreground=colors[k], background="#2e2610", font=mono)
+        self._apply_tree_tags()
+        theme.on_change(self._apply_tree_tags)
 
         nbar = ttk.Frame(right, padding=(8, 0, 0, 4))
         nbar.pack(fill="x")
@@ -171,6 +164,20 @@ class CalendarTab(ttk.Frame):
         self.status = ttk.Label(self, text="", style="Muted.TLabel", padding=(12, 6))
         self.status.pack(fill="x")
         self._update_view_buttons()
+
+    def _apply_tree_tags(self):
+        """Row colours of the event table (called again when the theme is switched)."""
+        try:
+            ui, mono = theme.F["ui"], (theme.F["mono"], 10)
+            self.tree.tag_configure("day", background=theme.PANEL2, foreground=theme.FG, font=(ui, 10, "bold"))
+            self.tree.tag_configure("today", background=theme.PANEL2, foreground=theme.ACCENT, font=(ui, 10, "bold"))
+            for k, role in (("high", "IMP_HIGH"), ("medium", "IMP_MED"), ("low", "IMP_LOW")):
+                color = getattr(theme, role)
+                self.tree.tag_configure(f"{k}_future", foreground=color, font=mono)
+                self.tree.tag_configure(f"{k}_past", foreground=getattr(theme, role + "_DIM"), font=mono)
+                self.tree.tag_configure(f"{k}_soon", foreground=color, background=theme.SOON_BG, font=mono)
+        except tk.TclError:
+            pass
 
     def _place_sash(self):
         """Give the table ~62 % of the width, so all columns and the scrollbar fit."""

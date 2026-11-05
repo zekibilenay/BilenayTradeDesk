@@ -31,8 +31,12 @@ GALLERY_COLS = 3                    # screenshots per row
 GALLERY_GAP = 12
 IMG_RATIO = 0.58                    # screenshot box height / width
 THUMB_DIR = IMAGES_DIR / ".thumbs"
-OUT_COLORS = {"Win": theme.GREEN, "Loss": theme.RED, "BE": theme.YELLOW, "Open": theme.MUTED}
 NUM_RE = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
+
+
+def out_color(outcome):
+    """Colour of a trade outcome in the current theme."""
+    return {"Win": theme.GREEN, "Loss": theme.RED, "BE": theme.YELLOW}.get(outcome, theme.MUTED)
 
 
 def r_value(text):
@@ -220,6 +224,7 @@ class TradeCard(tk.Frame):
     def __init__(self, master, tab, row):
         super().__init__(master, bg=theme.PANEL, highlightthickness=2, highlightbackground=theme.BORDER)
         self.tab, self.db, self.id = tab, tab.db, row["id"]
+        self.number = tab.number_of(self.id)
         self.editing = row.get("status") == "draft"
         self.vars, self.widgets, self._job = {}, {}, None
         self.gallery = self.strip = self.status = self.finish_msg = None
@@ -256,6 +261,7 @@ class TradeCard(tk.Frame):
         row = self.db.get_trade(self.id)
         if row is None:
             return
+        self.number = self.tab.number_of(self.id)
         for w in self.winfo_children():
             w.destroy()
         self.vars, self.widgets, self.gallery = {}, {}, None
@@ -291,7 +297,7 @@ class TradeCard(tk.Frame):
 
     def apply_border(self):
         if self.editing:
-            color = theme.ACCENT if self.tab.active is self else "#2d4a7c"
+            color = theme.ACCENT if self.tab.active is self else theme.ACCENT_DIM
         else:
             color = theme.BORDER
         self.configure(highlightbackground=color)
@@ -332,7 +338,7 @@ class TradeCard(tk.Frame):
         # --- row 1: identity
         r1 = tk.Frame(body, bg=theme.PANEL)
         r1.pack(fill="x")
-        tk.Label(r1, text=f"TRADE #{self.id}", bg=theme.PANEL, fg=theme.ACCENT,
+        tk.Label(r1, text=f"TRADE #{self.number}", bg=theme.PANEL, fg=theme.ACCENT,
                  font=(ui, 12, "bold")).pack(side="left", padx=(0, 16), anchor="s")
         for label, key, kind, width, vals, ed in (
                 ("Date (YYYY-MM-DD)", "trade_date", "entry", 13, None, False),
@@ -351,12 +357,6 @@ class TradeCard(tk.Frame):
         r2.pack(fill="x", pady=(10, 0))
         self._field(r2, "Outcome", "outcome", "combo", 9, OUTCOMES).pack(side="left", padx=(0, 10))
         self._field(r2, "Result (e.g. +2R)", "result_r", "entry", 10).pack(side="left", padx=(0, 10))
-        cl = tk.Frame(r2, bg=theme.PANEL)
-        cl.pack(side="left", padx=(0, 14))
-        tk.Label(cl, text="CHECKLIST THAT DAY", bg=theme.PANEL, fg=theme.MUTED, font=(ui, 8, "bold"),
-                 anchor="w").pack(fill="x")
-        self.cl_lbl = tk.Label(cl, text="—", bg=theme.PANEL, fg=theme.MUTED, font=(ui, 11, "bold"), anchor="w")
-        self.cl_lbl.pack(fill="x", pady=(5, 0))
         self._field(r2, "Setup", "setup", "combo", 22, self.db.distinct_values("setup"), True).pack(
             side="left", padx=(0, 10), fill="x", expand=True)
         self._field(r2, "DXY confirmation", "dxy_conf", "combo", 22, self.db.distinct_values("dxy_conf"), True).pack(
@@ -411,7 +411,6 @@ class TradeCard(tk.Frame):
         self.review.insert("1.0", row.get("review", ""))
         self.why.bind("<KeyRelease>", self._changed, add="+")
         self.review.bind("<KeyRelease>", self._changed, add="+")
-        self._update_cl_label(row.get("cl_verdict", ""), row.get("cl_score"))
         self._update_strip()
         self.render_gallery()
 
@@ -467,12 +466,7 @@ class TradeCard(tk.Frame):
         fields["instrument"] = v["instrument"] or "EURUSD"
         fields["why"] = self.why.get("1.0", "end-1c").strip()
         fields["review"] = self.review.get("1.0", "end-1c").strip()
-        day = v["trade_date"] if date_ok else (self.db.get_trade(self.id) or {}).get("trade_date", "")
-        rec = self.db.get_checklist_day(day) if day else None
-        fields["cl_verdict"] = rec["verdict"] if rec else ""
-        fields["cl_score"] = rec["score"] if rec else None
         self.db.update_trade(self.id, fields)
-        self._update_cl_label(fields["cl_verdict"], fields["cl_score"])
         if date_ok and time_ok:
             self.status.configure(text="✓ saved", fg=theme.GREEN)
         else:
@@ -481,20 +475,13 @@ class TradeCard(tk.Frame):
         return date_ok and time_ok
 
     def _update_strip(self):
-        self.strip.configure(bg=OUT_COLORS.get(self.vars["outcome"].get(), theme.MUTED))
-
-    def _update_cl_label(self, verdict, score):
-        if not verdict or verdict == "none" or score is None:
-            self.cl_lbl.configure(text="no record", fg=theme.MUTED)
-        else:
-            self.cl_lbl.configure(text=f"{score:.0f}% of steps done",
-                                  fg=theme.VERDICT_COLORS.get(verdict, theme.MUTED))
+        self.strip.configure(bg=out_color(self.vars["outcome"].get()))
 
     # ============================================================ DONE (read-only) MODE
     def _build_view(self, row):
         ui = theme.F["ui"]
         out = row.get("outcome") or "Open"
-        color = OUT_COLORS.get(out, theme.MUTED)
+        color = out_color(out)
         self.strip = tk.Frame(self, bg=color, width=6)
         self.strip.pack(side="left", fill="y")
         body = tk.Frame(self, bg=theme.PANEL)
@@ -503,7 +490,7 @@ class TradeCard(tk.Frame):
         # --- header: identity on the left, result / checklist / actions on the right
         head = tk.Frame(body, bg=theme.PANEL)
         head.pack(fill="x")
-        tk.Label(head, text=f"TRADE #{self.id}", bg=theme.PANEL, fg=theme.ACCENT,
+        tk.Label(head, text=f"TRADE #{self.number}", bg=theme.PANEL, fg=theme.ACCENT,
                  font=(ui, 12, "bold")).pack(side="left", padx=(0, 14))
         meta = "   ·   ".join(x for x in (row.get("trade_date"), row.get("trade_time"), row.get("instrument"),
                                           row.get("session")) if x)
@@ -518,11 +505,6 @@ class TradeCard(tk.Frame):
         res = (row.get("result_r") or "").strip()
         tk.Label(head, text=out.upper() + (f"   {res}" if res else ""), bg=theme.PANEL, fg=color,
                  font=(ui, 13, "bold")).pack(side="right", padx=(0, 18))
-        verdict, score = row.get("cl_verdict"), row.get("cl_score")
-        if verdict and verdict != "none" and score is not None:
-            tk.Label(head, text=f"Checklist: {score:.0f}% done", bg=theme.PANEL,
-                     fg=theme.VERDICT_COLORS.get(verdict, theme.MUTED), font=(ui, 9, "bold")).pack(
-                side="right", padx=(0, 18))
 
         # --- facts: only the fields that were filled in
         facts = [(label, (row.get(key) or "").strip()) for label, key in (
@@ -564,7 +546,7 @@ class TradeCard(tk.Frame):
     def _readonly_text(self, parent, text):
         t = tk.Text(parent, height=1, width=10, bg=theme.PANEL, fg=theme.FG, relief="flat", bd=0,
                     highlightthickness=0, wrap="word", font=(theme.F["ui"], 11), padx=0, pady=0, cursor="arrow",
-                    selectbackground=theme.ACCENT, selectforeground="white", insertwidth=0)
+                    selectbackground=theme.ACCENT_BTN, selectforeground="#ffffff", insertwidth=0)
         t.insert("1.0", text)
         bind_autosize(t, 1, 60)
         t.configure(state="disabled")
@@ -653,6 +635,7 @@ class JournalTab(ttk.Frame):
         self.db = db
         self.cards, self.active, self.shown = [], None, PAGE
         self._photos, self._pil = {}, {}
+        self.numbers = {}
         self._search_job = None
         self._build()
         self.reload()
@@ -706,6 +689,7 @@ class JournalTab(ttk.Frame):
         for w in self.feed.inner.winfo_children():
             w.destroy()
         self.cards, self.active = [], None
+        self.numbers = self.db.trade_numbers()
         rows = self._query()
         self._update_stats(rows)
         if not rows:
@@ -743,6 +727,10 @@ class JournalTab(ttk.Frame):
         drafts = sum(1 for r in rows if r.get("status") == "draft")
         n = f"{len(rows)} trades" + (f" ({drafts} being edited)" if drafts else "")
         self.stats_lbl.configure(text=f"{n}   •   Win rate: {wr}   •   Total R: {total_r:+.2f}")
+
+    def number_of(self, trade_id):
+        """Running number shown on a card (see Database.trade_numbers)."""
+        return self.numbers.get(trade_id, trade_id)
 
     def refresh_stats(self):
         self._update_stats(self._query())
@@ -791,7 +779,10 @@ class JournalTab(ttk.Frame):
     def _on_ctrl_v(self, _e):
         if not self.winfo_viewable() or not self.active or not self.active.editing:
             return
-        focus = self.focus_get()
+        try:
+            focus = self.focus_get()
+        except (KeyError, tk.TclError):
+            return
         if isinstance(focus, (tk.Text, tk.Entry, ttk.Entry, ttk.Combobox)):
             try:
                 if self.clipboard_get():

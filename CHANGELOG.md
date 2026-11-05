@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+- **Themes:** Midnight (default), Graphite, OLED Black, Nord, Light and Sand. The selector sits at the right end
+  of the tab bar; the theme changes instantly (no restart) and is remembered. Text and background colours of every
+  theme were checked for readable contrast.
+- The window now starts maximized.
+- Clicking an empty spot takes the text cursor out of the box you were typing in (the box saves itself).
+- Trade numbers are a running count: with n trades the next new trade is #n+1 (deleting a trade closes the gap).
+- Today's checklist: ticking a step no longer throws the page back to the top; the page stays where it is.
+- Trade Journal: the checklist record ("% of steps done", "Checklist that day") is no longer shown on trades.
+- Fixed an error dialog that could appear when pasting with a drop-down list open.
+
 ## 0.3.2
 - Checklist redesigned around options and steps:
     - every option now holds its own **steps**; add, edit and delete them right inside the option card

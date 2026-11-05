@@ -28,9 +28,10 @@ OPTION_COLUMNS = 4
 class QuietAdd(tk.Frame):
     """A quiet "+ Something" link that turns into a one-line input when clicked (Enter adds, Esc cancels)."""
 
-    def __init__(self, master, label, on_submit, bg=theme.PANEL):
+    def __init__(self, master, label, on_submit, bg=None):
+        bg = bg or theme.PANEL
         super().__init__(master, bg=bg)
-        self.bg, self.on_submit, self.entry, self.hint = bg, on_submit, None, None
+        self._bg, self.on_submit, self.entry, self.hint = bg, on_submit, None, None
         self.btn = tk.Label(self, text=label, bg=bg, fg=theme.MUTED, font=(theme.F["ui"], 10), cursor="hand2",
                             padx=6, pady=3)
         self.btn.pack(side="left")
@@ -43,12 +44,12 @@ class QuietAdd(tk.Frame):
             self.entry.focus_set()
             return
         self.btn.pack_forget()
-        field_bg = theme.PANEL if self.bg == theme.PANEL2 else theme.PANEL2
+        field_bg = theme.PANEL if self._bg == theme.PANEL2 else theme.PANEL2
         self.entry = tk.Entry(self, bg=field_bg, fg=theme.FG, insertbackground=theme.FG, relief="flat",
                               highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
-                              font=(theme.F["ui"], 10), selectbackground=theme.ACCENT, selectforeground="white")
+                              font=(theme.F["ui"], 10), selectbackground=theme.ACCENT_BTN, selectforeground="#ffffff")
         self.entry.pack(side="left", fill="x", expand=True, ipady=3)
-        self.hint = tk.Label(self, text="Enter to add · Esc to cancel", bg=self.bg, fg=theme.MUTED,
+        self.hint = tk.Label(self, text="Enter to add · Esc to cancel", bg=self._bg, fg=theme.MUTED,
                              font=(theme.F["ui"], 9))
         self.hint.pack(side="left", padx=(8, 0))
         self.entry.bind("<Return>", self._submit)
@@ -102,7 +103,7 @@ class OptionCard(tk.Frame):
         self.title = tk.Entry(head, bg=theme.PANEL2, fg=theme.FG, insertbackground=theme.FG, relief="flat",
                               highlightthickness=1, highlightbackground=theme.PANEL2,
                               highlightcolor=theme.ACCENT, font=(ui, 12, "bold"),
-                              selectbackground=theme.ACCENT, selectforeground="white")
+                              selectbackground=theme.ACCENT_BTN, selectforeground="#ffffff")
         self.title.insert(0, option["title"])
         self.title.pack(side="left", fill="x", expand=True)
         self.title.bind("<KeyRelease>", lambda e=None: tab.option_title_changed(option, self.title.get()))
@@ -171,6 +172,7 @@ class ChecklistTab(ttk.Frame):
         self._opt_cards, self._sec_adders = [], []
         self._tpl_job = self._day_job = None
         self._today_box = None
+        self._today_rows, self._today_count, self._today_bar = {}, None, None
         self._f_done = None
         self._build()
         self.load_day(self.day)
@@ -245,7 +247,7 @@ class ChecklistTab(ttk.Frame):
             lbl.bind("<Button-1>", lambda e=None, d=delta: self.move_section(si, d))
         title = tk.Entry(hdr, bg=theme.PANEL, fg=theme.ACCENT, insertbackground=theme.FG, relief="flat",
                          highlightthickness=1, highlightbackground=theme.PANEL, highlightcolor=theme.ACCENT,
-                         font=(ui, 13, "bold"), selectbackground=theme.ACCENT, selectforeground="white")
+                         font=(ui, 13, "bold"), selectbackground=theme.ACCENT_BTN, selectforeground="#ffffff")
         title.insert(0, sec["title"])
         title.pack(side="left", fill="x", expand=True)
         title.bind("<KeyRelease>", lambda e=None: self._section_title_changed(sec, title))
@@ -272,9 +274,14 @@ class ChecklistTab(ttk.Frame):
 
     # --------------------------------------------------- "Today's checklist" (bottom)
     def _fill_today(self):
+        """Rebuild the bottom checklist. The scroll position is kept, so the page does not jump."""
+        self.scroll.keep_scroll(self._fill_today_now)
+
+    def _fill_today_now(self):
         box = self._today_box
         if box is None:
             return
+        self._today_rows = {}
         try:
             for w in box.winfo_children():
                 w.destroy()
@@ -291,13 +298,14 @@ class ChecklistTab(ttk.Frame):
         head = tk.Frame(inner, bg=theme.PANEL2)
         head.pack(fill="x")
         tk.Label(head, text="Today's checklist", bg=theme.PANEL2, fg=theme.FG, font=(ui, 13, "bold")).pack(side="left")
-        tk.Label(head, text=f"{done} of {len(steps)} done" if steps else "", bg=theme.PANEL2, fg=theme.MUTED,
-                 font=(ui, 10)).pack(side="right")
+        self._today_count = tk.Label(head, text="", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 10))
+        self._today_count.pack(side="right")
         track = tk.Frame(inner, bg=theme.BORDER, height=5)
         track.pack(fill="x", pady=(8, 6))
+        self._today_bar = tk.Frame(track, bg=theme.ACCENT, height=5)
         if steps:
-            tk.Frame(track, bg=theme.GREEN if done == len(steps) else theme.ACCENT, height=5).place(
-                x=0, y=0, relheight=1.0, relwidth=done / len(steps))
+            self._today_bar.place(x=0, y=0, relheight=1.0, relwidth=0.0)
+        self._update_today_progress()
         if not steps:
             tk.Label(inner, text="Select an option in a section to see its steps here.", bg=theme.PANEL2,
                      fg=theme.MUTED, font=(ui, 10), anchor="w").pack(fill="x", pady=(6, 0))
@@ -329,16 +337,39 @@ class ChecklistTab(ttk.Frame):
                        font=self._f_done if ticked else (ui, 11), anchor="w", justify="left", wraplength=600,
                        cursor="hand2")
         txt.pack(side="left", fill="x", expand=True, pady=4)
+        self._today_rows[step["id"]] = (mark, txt)
         tk.Frame(parent, bg=theme.BORDER, height=1).pack(fill="x")
         for w in (row, mark, txt):
             w.bind("<Button-1>", lambda e=None, sid=step["id"]: self.toggle_step(sid))
         row.bind("<Configure>", lambda e=None: txt.configure(wraplength=max(120, row.winfo_width() - 50)))
         return row
 
+    def _update_today_progress(self):
+        """Counter and progress bar of 'Today's checklist' (no rebuild)."""
+        steps = selected_steps(self.template, self.choices)
+        done = sum(1 for _s, _o, st in steps if self.answers.get(st["id"], {}).get("confirmed"))
+        try:
+            self._today_count.configure(text=f"{done} of {len(steps)} done" if steps else "")
+            if steps:
+                self._today_bar.configure(bg=theme.GREEN if done == len(steps) else theme.ACCENT)
+                self._today_bar.place_configure(relwidth=done / len(steps))
+        except (tk.TclError, AttributeError):
+            pass
+
     def toggle_step(self, step_id):
+        """Tick / untick one step. Only that row is restyled (nothing is rebuilt), so the page stays where it is."""
         a = self.answers.setdefault(step_id, {"note": "", "confirmed": False})
         a["confirmed"] = not a["confirmed"]
-        self._fill_today()
+        row = self._today_rows.get(step_id)
+        if row is None:
+            self._fill_today()
+        else:
+            mark, txt = row
+            ticked = a["confirmed"]
+            mark.configure(text="☑" if ticked else "☐", fg=theme.GREEN if ticked else theme.MUTED)
+            txt.configure(fg=theme.MUTED if ticked else theme.FG,
+                          font=self._f_done if ticked else (theme.F["ui"], 11))
+            self._update_today_progress()
         self._save_day_soon()
 
     # ------------------------------------------------------- template edits

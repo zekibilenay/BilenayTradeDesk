@@ -37,7 +37,7 @@ Python 3.10+ with Tk (on Windows the python.org installer includes it).
 
 Or on GitHub: **Actions → Build Windows exe → Run workflow** (downloadable artifact), or push a tag:
 ```bash
-git tag v0.3.2 && git push origin v0.3.2      # builds the exe and creates a GitHub Release
+git tag v0.4.0 && git push origin v0.4.0      # builds the exe and creates a GitHub Release
 ```
 
 ## Development
@@ -52,3 +52,7 @@ tabs live in `tradehub/*_tab.py`.
 - Calendar data comes from the public ForexFactory feed; it is rate-limited, so manual refresh is
   limited to once per 2 minutes. This is a personal tool, not financial advice.
 - License: MIT.
+
+## Themes
+
+Midnight, Graphite, OLED Black, Nord, Light and Sand. Pick one with the selector at the right end of the tab bar; the choice is remembered.

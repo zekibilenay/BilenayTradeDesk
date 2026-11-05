@@ -8,8 +8,9 @@ from . import theme
 class ScrollFrame(ttk.Frame):
     """Vertically scrollable area. Put content into `.inner`."""
 
-    def __init__(self, master, bg=theme.PANEL, **kw):
+    def __init__(self, master, bg=None, **kw):
         super().__init__(master, **kw)
+        bg = bg or theme.PANEL
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
         self.vbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vbar.set)
@@ -23,6 +24,18 @@ class ScrollFrame(ttk.Frame):
         self.bind_all("<Button-4>", self._on_wheel, add="+")
         self.bind_all("<Button-5>", self._on_wheel, add="+")
         self.on_width = None
+
+    def keep_scroll(self, rebuild):
+        """Run rebuild() (which destroys / recreates widgets inside `.inner`) without the page jumping."""
+        top = self.canvas.canvasy(0)
+        rebuild()
+        self.inner.update_idletasks()
+        bbox = self.canvas.bbox("all")
+        if bbox:
+            self.canvas.configure(scrollregion=bbox)
+            height = bbox[3] - bbox[1]
+            if height > 0:
+                self.canvas.yview_moveto(max(0.0, top - bbox[1]) / height)
 
     def _on_inner(self, _e):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -94,8 +107,8 @@ class ScrollFrame(ttk.Frame):
 class PlaceholderEntry(tk.Entry):
     """Entry with grey hint text. Enter submits (calls on_submit(text))."""
 
-    def __init__(self, master, placeholder, on_submit=None, bg=theme.PANEL2, **kw):
-        super().__init__(master, bg=bg, fg=theme.MUTED, insertbackground=theme.FG, relief="flat",
+    def __init__(self, master, placeholder, on_submit=None, bg=None, **kw):
+        super().__init__(master, bg=bg or theme.PANEL2, fg=theme.MUTED, insertbackground=theme.FG, relief="flat",
                          highlightthickness=1, highlightbackground=theme.BORDER, highlightcolor=theme.ACCENT,
                          font=(theme.F["ui"], 11), **kw)
         self.placeholder = placeholder
@@ -135,7 +148,8 @@ class PlaceholderEntry(tk.Entry):
 class ConfirmButton(tk.Label):
     """Inline two-step button: first click arms it, a second click within 3 s runs the command."""
 
-    def __init__(self, master, command, text="✕", armed_text="Delete?", bg=theme.PANEL2, **kw):
+    def __init__(self, master, command, text="✕", armed_text="Delete?", bg=None, **kw):
+        bg = bg or theme.PANEL2
         super().__init__(master, text=text, bg=bg, fg=theme.MUTED, cursor="hand2",
                          font=(theme.F["ui"], 10), padx=8, pady=2, **kw)
         self._cmd, self._text, self._armed_text, self._bg = command, text, armed_text, bg
@@ -150,7 +164,7 @@ class ConfirmButton(tk.Label):
             self._cmd()
         else:
             self._armed = True
-            self.configure(text=self._armed_text, fg="white", bg=theme.RED)
+            self.configure(text=self._armed_text, fg="#ffffff", bg=theme.RED_BTN)
             self._job = self.after(3000, self._disarm)
 
     def _disarm(self):

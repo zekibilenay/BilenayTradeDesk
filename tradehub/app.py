@@ -19,12 +19,14 @@ class TradeHubApp(tk.Tk):
         ensure_dirs()
         self.settings = Settings(SETTINGS_PATH)
         self.db = Database(DB_PATH)
+        theme.set_theme(self.settings.get("theme"))
         theme.apply_theme(self)
 
         self.title(f"{APP_NAME} {APP_VERSION}")
         self._set_icon()
         self.geometry(self._safe_geometry(self.settings.get("geometry")))
         self.minsize(1100, 700)
+        self._maximize()
 
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True)
@@ -34,8 +36,58 @@ class TradeHubApp(tk.Tk):
         nb.add(self.checklist, text="Pre-Trade Checklist")
         nb.add(self.calendar, text="Economic Calendar")
         nb.add(self.journal, text="Trade Journal")
+        self._build_theme_picker()
 
+        # click on an empty spot -> the text cursor leaves whatever box it was in (and that box saves itself)
+        self.bind_all("<Button-1>", self._clear_focus, add="+")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _maximize(self):
+        """Start with the window filling the screen (the title bar stays, so it can still be restored)."""
+        try:
+            self.state("zoomed")                       # Windows / macOS
+        except tk.TclError:
+            try:
+                self.attributes("-zoomed", True)       # Linux
+            except tk.TclError:
+                pass
+
+    # ------------------------------------------------------------------ theme
+    def _build_theme_picker(self):
+        """Theme selector at the right end of the tab bar."""
+        bar = ttk.Frame(self)
+        ttk.Label(bar, text="Theme", style="Muted.TLabel").pack(side="left", padx=(0, 8))
+        self.theme_var = tk.StringVar(value=theme.current_name())
+        box = ttk.Combobox(bar, textvariable=self.theme_var, values=theme.names(), state="readonly", width=12,
+                           exportselection=False)
+        box.pack(side="left")
+        box.bind("<<ComboboxSelected>>", lambda e=None: (box.selection_clear(), self._on_theme(self.theme_var.get())))
+        bar.place(relx=1.0, x=-14, y=13, anchor="ne")
+        bar.lift()
+
+    def _on_theme(self, name):
+        """Switch the theme of the running window (nothing is rebuilt: scroll positions and text stay)."""
+        if name == theme.current_name():
+            return
+        old = theme.palette()
+        theme.set_theme(name)
+        theme.apply_theme(self)
+        theme.recolor(self, old, theme.palette())
+        self.settings.set("theme", name)
+        self.focus_set()
+
+    _KEEP_FOCUS = ("Entry", "TEntry", "Text", "TCombobox", "TSpinbox", "Spinbox", "Listbox")
+
+    def _clear_focus(self, event):
+        w = event.widget
+        try:
+            if not isinstance(w, tk.Misc) or w.winfo_toplevel() is not self:
+                return                                  # other windows (image viewer, combobox lists)
+            if w.winfo_class() in self._KEEP_FOCUS:
+                return                                  # clicking into an input keeps the cursor there
+            self.focus_set()
+        except (tk.TclError, KeyError):
+            pass
 
     def _set_icon(self):
         """Title-bar / taskbar icon. (Until v0.2 only the .exe file had an icon; the window itself kept Tk's

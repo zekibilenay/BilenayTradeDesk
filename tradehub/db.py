@@ -185,6 +185,12 @@ class Database:
         sql += " ORDER BY trade_date DESC, trade_time DESC, id DESC"
         return [dict(r) for r in self.conn.execute(sql, params).fetchall()]
 
+    def trade_numbers(self) -> dict:
+        """{trade id: running number}. With n trades the next new trade is number n + 1; deleting a trade
+        closes the gap (numbers are a count, not the internal database id)."""
+        ids = [r[0] for r in self.conn.execute("SELECT id FROM trades ORDER BY id")]
+        return {tid: i + 1 for i, tid in enumerate(ids)}
+
     def delete_trade(self, trade_id):
         self.conn.execute("DELETE FROM trade_images WHERE trade_id = ?", (trade_id,))
         self.conn.execute("DELETE FROM trades WHERE id = ?", (trade_id,))

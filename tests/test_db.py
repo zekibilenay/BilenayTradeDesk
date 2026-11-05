@@ -99,3 +99,14 @@ def test_migration_from_v02(tmp_path):
     assert db.get_checklist_day("2026-10-30")["note"] == "old note"
     db.close()
     Database(p).close()                                                           # second open: no migration error
+
+
+def test_trade_numbers_are_a_running_count(tmp_path):
+    """With n trades the next one is n + 1, even after trades were deleted (the internal id keeps growing)."""
+    db = Database(tmp_path / "t.db")
+    ids = [db.create_trade("2026-11-0%d" % d, "10:00") for d in (1, 2, 3)]
+    assert db.trade_numbers() == {ids[0]: 1, ids[1]: 2, ids[2]: 3}
+    db.delete_trade(ids[1])
+    assert db.trade_numbers() == {ids[0]: 1, ids[2]: 2}
+    new = db.create_trade("2026-11-04", "10:00")
+    assert new > ids[2] and db.trade_numbers()[new] == 3

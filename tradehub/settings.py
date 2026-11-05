@@ -5,6 +5,7 @@ from .paths import atomic_write_text
 
 DEFAULTS = {
     "geometry": "1500x900",
+    "theme": "Midnight",
     "tz_offset": 3.0,                       # calendar time zone (UTC+3 = Turkey)
     "cal_view": "week",                     # "today" | "week"
     "cal_impacts": ["High", "Medium"],
