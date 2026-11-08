@@ -84,44 +84,79 @@ class QuietAdd(tk.Frame):
 
 
 class OptionCard(tk.Frame):
-    """One option: a name, its steps (add / edit / delete) and a Select button."""
+    """One option. Collapsed (the default): its name, step count and Select / Edit. Expanded (after "Edit"): its steps
+    can be added, edited and deleted. Collapsed cards keep the page short, so Today's checklist sits higher up."""
 
-    def __init__(self, master, tab, si, oi, option, selected):
+    def __init__(self, master, tab, si, oi, option, selected, expanded=False):
         super().__init__(master, bg=theme.PANEL2, highlightthickness=2, highlightbackground=theme.BORDER)
-        self.tab, self.option = tab, option
+        self.tab, self.si, self.oi, self.option = tab, si, oi, option
+        self.selected, self.expanded = selected, expanded
+        self.body = self.adder = None
+        self.rebuild()
+
+    def rebuild(self):
+        """(Re)create the inside of the card for the current collapsed / expanded state."""
+        if self.body is not None:
+            self.body.destroy()
+        self.adder = None
+        tab, si, oi, option = self.tab, self.si, self.oi, self.option
         ui = theme.F["ui"]
-        body = tk.Frame(self, bg=theme.PANEL2)
-        body.pack(fill="both", expand=True, padx=12, pady=10)
-        self.btn = ttk.Button(body, command=lambda: tab.select_option(si, oi))
-        self.btn.pack(side="bottom", anchor="w", pady=(10, 0))
+        body = self.body = tk.Frame(self, bg=theme.PANEL2)
+        body.pack(fill="both", expand=True, padx=12, pady=10 if self.expanded else 8)
+
+        bar = tk.Frame(body, bg=theme.PANEL2)                       # bottom row: Select  +  Edit / Done
+        bar.pack(side="bottom", fill="x", pady=(10 if self.expanded else 6, 0))
+        self.btn = ttk.Button(bar, command=lambda: tab.select_option(si, oi))
+        self.btn.pack(side="left")
+        toggle = tk.Label(bar, text="Done" if self.expanded else "Edit", bg=theme.PANEL2, fg=theme.MUTED,
+                          font=(ui, 10), cursor="hand2", padx=10, pady=3)
+        toggle.pack(side="left", padx=(6, 0))
+        toggle.bind("<Button-1>", lambda e=None: tab.toggle_card(self))
+        toggle.bind("<Enter>", lambda e=None: toggle.configure(fg=theme.FG))
+        toggle.bind("<Leave>", lambda e=None: toggle.configure(fg=theme.MUTED))
 
         head = tk.Frame(body, bg=theme.PANEL2)
         head.pack(fill="x")
-        ConfirmButton(head, command=lambda: tab.delete_option(si, oi), bg=theme.PANEL2).pack(side="right")
         self.dot = tk.Label(head, text="○", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 14))
         self.dot.pack(side="left", padx=(0, 6))
-        self.title = tk.Entry(head, bg=theme.PANEL2, fg=theme.FG, insertbackground=theme.FG, relief="flat",
-                              highlightthickness=1, highlightbackground=theme.PANEL2,
-                              highlightcolor=theme.ACCENT, font=(ui, 12, "bold"),
-                              selectbackground=theme.ACCENT_BTN, selectforeground="#ffffff")
-        self.title.insert(0, option["title"])
-        self.title.pack(side="left", fill="x", expand=True)
-        self.title.bind("<KeyRelease>", lambda e=None: tab.option_title_changed(option, self.title.get()))
-        self.title.bind("<FocusOut>", self._title_focus_out)
-        self.title.bind("<Return>", lambda e=None: self.winfo_toplevel().focus_set())
+        if self.expanded:
+            ConfirmButton(head, command=lambda: tab.delete_option(si, oi), bg=theme.PANEL2).pack(side="right")
+            self.title = tk.Entry(head, bg=theme.PANEL2, fg=theme.FG, insertbackground=theme.FG, relief="flat",
+                                  highlightthickness=1, highlightbackground=theme.PANEL2,
+                                  highlightcolor=theme.ACCENT, font=(ui, 12, "bold"),
+                                  selectbackground=theme.ACCENT_BTN, selectforeground="#ffffff")
+            self.title.insert(0, option["title"])
+            self.title.pack(side="left", fill="x", expand=True)
+            self.title.bind("<KeyRelease>", lambda e=None: tab.option_title_changed(option, self.title.get()))
+            self.title.bind("<FocusOut>", self._title_focus_out)
+            self.title.bind("<Return>", lambda e=None: self.winfo_toplevel().focus_set())
+            self._build_steps(body)
+        else:
+            n = len(option["steps"])
+            tk.Label(head, text=f"{n} step" + ("" if n == 1 else "s"), bg=theme.PANEL2, fg=theme.MUTED,
+                     font=(ui, 9)).pack(side="right")
+            self.title = tk.Label(head, text=option["title"], bg=theme.PANEL2, fg=theme.FG, font=(ui, 12, "bold"),
+                                  anchor="w", cursor="hand2")
+            self.title.pack(side="left", fill="x", expand=True)
+            for w in (self.dot, self.title):                        # clicking the name selects the option
+                w.bind("<Button-1>", lambda e=None: tab.select_option(si, oi))
+        self.apply_state(self.selected)
 
+    def _build_steps(self, body):
+        ui = theme.F["ui"]
         tk.Label(body, text="STEPS", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 8, "bold"),
                  anchor="w").pack(fill="x", pady=(8, 3))
-        self.adder = QuietAdd(body, "+ Add step", lambda text: tab.add_step(si, oi, text), bg=theme.PANEL2)
+        self.adder = QuietAdd(body, "+ Add step", lambda text: self.tab.add_step(self.si, self.oi, text),
+                              bg=theme.PANEL2)
         self.adder.pack(side="bottom", fill="x")
         steps = tk.Frame(body, bg=theme.PANEL2)
         steps.pack(fill="x")
-        for k, st in enumerate(option["steps"]):
-            self._step_row(steps, si, oi, k, st)
-        self.apply_state(selected)
+        for k, st in enumerate(self.option["steps"]):
+            self._step_row(steps, k, st)
 
-    def _step_row(self, parent, si, oi, k, step):
+    def _step_row(self, parent, k, step):
         ui = theme.F["ui"]
+        si, oi = self.si, self.oi
         row = tk.Frame(parent, bg=theme.PANEL2)
         row.pack(fill="x", pady=2)
         tk.Label(row, text=f"{k + 1}.", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 10), width=2,
@@ -146,6 +181,7 @@ class OptionCard(tk.Frame):
         self.tab.refresh_today_if_dirty()                    # done typing: now update Today's checklist
 
     def apply_state(self, selected):
+        self.selected = selected
         if selected:
             self.configure(highlightbackground=theme.ACCENT)
             self.dot.configure(text="●", fg=theme.ACCENT)
@@ -177,6 +213,7 @@ class ChecklistTab(ttk.Frame):
         self._today_box = None
         self._today_rows, self._today_count, self._today_bar = {}, None, None
         self._today_dirty = False
+        self._expanded = set()            # ids of the option cards that are open for editing (all start collapsed)
         self._f_done = None
         self._build()
         self.bind("<Map>", lambda e=None: self.refresh_today_if_dirty())      # coming back to this tab
@@ -231,11 +268,12 @@ class ChecklistTab(ttk.Frame):
                         w = self._opt_cards[si][focus[2]]
                     if kind == "option_title":
                         w.title.focus_set()
-                        w.title.select_range(0, "end")
+                        if hasattr(w.title, "select_range"):
+                            w.title.select_range(0, "end")
                     else:
                         w.open()
                     self.scroll.see(w)
-            except (tk.TclError, IndexError):
+            except (tk.TclError, IndexError, AttributeError):
                 pass
         self.after(40, finish)
 
@@ -269,9 +307,9 @@ class ChecklistTab(ttk.Frame):
             for c in range(OPTION_COLUMNS):
                 grid.columnconfigure(c, weight=1, uniform=f"opt{si}")
             for oi, opt in enumerate(sec["options"]):
-                card = OptionCard(grid, self, si, oi, opt, opt["id"] == chosen)
+                card = OptionCard(grid, self, si, oi, opt, opt["id"] == chosen, opt["id"] in self._expanded)
                 col = oi % OPTION_COLUMNS
-                card.grid(row=oi // OPTION_COLUMNS, column=col, sticky="nsew",
+                card.grid(row=oi // OPTION_COLUMNS, column=col, sticky="new",
                           padx=(0 if col == 0 else 8, 0), pady=(0, 8))
                 cards.append(card)
         adder = QuietAdd(sf, "+ Choice", lambda text, s=si: self.add_option(s, text))
@@ -390,12 +428,14 @@ class ChecklistTab(ttk.Frame):
     def add_option(self, si, title):
         opts = self.template["sections"][si]["options"]
         opts.append({"id": new_id(), "title": title, "steps": []})
+        self._expanded.add(opts[-1]["id"])                       # a new option opens right away, to add its steps
         self._save_template_soon()
         self._render(focus=("step_add", si, len(opts) - 1))
 
     def delete_option(self, si, oi):
         sec = self.template["sections"][si]
         opt = sec["options"].pop(oi)
+        self._expanded.discard(opt["id"])
         if self.choices.get(sec["id"]) == opt["id"]:
             del self.choices[sec["id"]]
         for st in opt["steps"]:
@@ -412,7 +452,9 @@ class ChecklistTab(ttk.Frame):
             self._today_dirty = True                 # Today's checklist is refreshed when you leave the box
 
     def add_step(self, si, oi, text):
-        steps = self.template["sections"][si]["options"][oi]["steps"]
+        opt = self.template["sections"][si]["options"][oi]
+        self._expanded.add(opt["id"])
+        steps = opt["steps"]
         steps.append({"id": new_id(), "text": text.replace("\n", " ").strip()})
         self._save_template_soon()
         self._render(focus=("step_add", si, oi))                 # keep the input open: add the next step right away
@@ -431,6 +473,18 @@ class ChecklistTab(ttk.Frame):
             step["text"] = t
             self._save_template_soon()
             self._today_dirty = True
+
+    def toggle_card(self, card):
+        """Open a card for editing (Edit) or close it again (Done). Only that card changes; the page stays put."""
+        oid = card.option["id"]
+        if oid in self._expanded:
+            self._expanded.discard(oid)
+            card.expanded = False
+        else:
+            self._expanded.add(oid)
+            card.expanded = True
+        self.scroll.keep_scroll(card.rebuild)
+        self.refresh_today_if_dirty()
 
     def select_option(self, si, oi):
         """Pick (or un-pick) today's option for a section. Updates the cards in place: no re-render."""

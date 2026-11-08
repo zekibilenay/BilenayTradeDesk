@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+- Checklist: option cards now start **collapsed** (name, number of steps, Select / Edit), so Today's checklist sits much
+  higher on the page. Press **Edit** on a card to open its steps for editing and **Done** to close it again. Clicking an
+  option's name selects it. A new option opens by itself so you can add its steps right away.
+
 ## 0.5.0
 - **Psychology section** (example, added once to your checklist): pick how you feel today - Calm & focused, Tired /
   slept badly, Losing streak, Angry / want revenge, Overconfident after a win, Anxious / afraid to miss out. Each option
