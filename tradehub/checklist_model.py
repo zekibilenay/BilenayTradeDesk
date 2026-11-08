@@ -23,6 +23,50 @@ def _steps(*texts):
     return [{"id": new_id(), "text": t} for t in texts]
 
 
+PSYCHOLOGY_ID = "psychology"
+
+
+def psychology_section() -> dict:
+    """Example 'how do I feel?' section: you pick the option that matches your state today; its steps (reminders
+    to yourself) become part of Today's checklist. Nothing is calculated - it is purely your own check."""
+    def opt(title, *steps):
+        return {"id": new_id(), "title": title, "steps": _steps(*steps)}
+    return {"id": PSYCHOLOGY_ID, "title": "Psychology", "options": [
+        opt("Calm & focused",
+            "Sadece planımdaki setup'ı arayacağım",
+            "Stop'u koyduktan sonra yerinden oynatmayacağım",
+            "Saat kuralıma uyacağım"),
+        opt("Tired / slept badly",
+            "Bugün lot'u yarıya düşür",
+            "Emin değilsem işlem yok",
+            "En fazla bir planlı trade, sonra grafiği kapat"),
+        opt("Losing streak",
+            "Üst üste kaybettim: bugün lot'u düşür ya da işlem alma",
+            "Son kayıplarımı journal'dan oku, aynı hatayı mı yapıyorum?",
+            "Kaybı geri alma isteği bir trade sebebi değildir"),
+        opt("Angry / want revenge",
+            "Dur. Bu halde işlem yok.",
+            "Grafiği kapat, 15 dakika uzaklaş",
+            "Sakinleşmeden platformu açma"),
+        opt("Overconfident after a win",
+            "Kazanç beni haklı çıkarmaz: sıradaki trade bağımsızdır",
+            "Aynı lot, aynı kurallar",
+            "Planda olmayan trade yok"),
+        opt("Anxious / afraid to miss out",
+            "Kaçan trade'in peşinden gitme",
+            "Setup oluşmadıysa beklemek de bir pozisyondur",
+            "Bir sonraki setup'ı bekle"),
+    ]}
+
+
+def add_psychology_example(t) -> bool:
+    """Append the example Psychology section unless the template already has it. True if it was added."""
+    if any(s.get("id") == PSYCHOLOGY_ID for s in t["sections"]):
+        return False
+    t["sections"].append(psychology_section())
+    return True
+
+
 def default_template() -> dict:
     """Just examples - rewrite them directly on the checklist page."""
     return {"version": 4, "sections": [
@@ -41,6 +85,7 @@ def default_template() -> dict:
             {"id": "ex_t2", "title": "New York open", "steps": _steps("Wait for a liquidity sweep")},
             {"id": "ex_t3", "title": "Outside my hours", "steps": _steps("Do not trade")},
         ]},
+        psychology_section(),
     ]}
 
 

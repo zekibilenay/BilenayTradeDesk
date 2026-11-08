@@ -108,6 +108,7 @@ class OptionCard(tk.Frame):
         self.title.pack(side="left", fill="x", expand=True)
         self.title.bind("<KeyRelease>", lambda e=None: tab.option_title_changed(option, self.title.get()))
         self.title.bind("<FocusOut>", self._title_focus_out)
+        self.title.bind("<Return>", lambda e=None: self.winfo_toplevel().focus_set())
 
         tk.Label(body, text="STEPS", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 8, "bold"),
                  anchor="w").pack(fill="x", pady=(8, 3))
@@ -135,13 +136,14 @@ class OptionCard(tk.Frame):
         bind_autosize(txt, 1, 6)
         txt.bind("<KeyRelease>", lambda e=None: self.tab.step_text_changed(step, txt.get("1.0", "end-1c")), add="+")
         txt.bind("<Return>", lambda e=None: (self.adder.open(), "break")[1])     # Enter: next step, no newline
+        txt.bind("<Tab>", lambda e=None: (txt.tk_focusNext().focus_set(), "break")[1])   # Tab: leave the box
         txt.bind("<FocusOut>", lambda e=None: self._step_focus_out(step, txt))
 
-    @staticmethod
-    def _step_focus_out(step, txt):
+    def _step_focus_out(self, step, txt):
         if not txt.get("1.0", "end-1c").strip():             # never leave a step empty
             txt.delete("1.0", "end")
             txt.insert("1.0", step["text"])
+        self.tab.refresh_today_if_dirty()                    # done typing: now update Today's checklist
 
     def apply_state(self, selected):
         if selected:
@@ -159,6 +161,7 @@ class OptionCard(tk.Frame):
         if not self.title.get().strip():                          # never leave an option without a name
             self.title.delete(0, "end")
             self.title.insert(0, self.option["title"])
+        self.tab.refresh_today_if_dirty()
 
 
 class ChecklistTab(ttk.Frame):
@@ -173,8 +176,10 @@ class ChecklistTab(ttk.Frame):
         self._tpl_job = self._day_job = None
         self._today_box = None
         self._today_rows, self._today_count, self._today_bar = {}, None, None
+        self._today_dirty = False
         self._f_done = None
         self._build()
+        self.bind("<Map>", lambda e=None: self.refresh_today_if_dirty())      # coming back to this tab
         self.load_day(self.day)
 
     # ------------------------------------------------------------------ UI
@@ -210,6 +215,7 @@ class ChecklistTab(ttk.Frame):
 
         self._today_box = tk.Frame(inner, bg=theme.PANEL2, highlightthickness=1, highlightbackground=theme.BORDER)
         self._today_box.pack(fill="x", padx=16, pady=(8, 28))
+        self._today_dirty = False
         self._fill_today()
 
         def finish():
@@ -252,6 +258,7 @@ class ChecklistTab(ttk.Frame):
         title.pack(side="left", fill="x", expand=True)
         title.bind("<KeyRelease>", lambda e=None: self._section_title_changed(sec, title))
         title.bind("<FocusOut>", lambda e=None: self._section_title_focus_out(sec, title))
+        title.bind("<Return>", lambda e=None: self.winfo_toplevel().focus_set())
         tk.Frame(sf, bg=theme.BORDER, height=1).pack(fill="x", pady=(5, 8))
 
         cards = []
@@ -281,6 +288,7 @@ class ChecklistTab(ttk.Frame):
         box = self._today_box
         if box is None:
             return
+        self._today_dirty = False
         self._today_rows = {}
         try:
             for w in box.winfo_children():
@@ -344,6 +352,12 @@ class ChecklistTab(ttk.Frame):
         row.bind("<Configure>", lambda e=None: txt.configure(wraplength=max(120, row.winfo_width() - 50)))
         return row
 
+    def refresh_today_if_dirty(self):
+        """Update 'Today's checklist' after text was edited (called when a box is left, never per keystroke)."""
+        if self._today_dirty:
+            self._today_dirty = False
+            self._fill_today()
+
     def _update_today_progress(self):
         """Counter and progress bar of 'Today's checklist' (no rebuild)."""
         steps = selected_steps(self.template, self.choices)
@@ -395,7 +409,7 @@ class ChecklistTab(ttk.Frame):
         if t:
             option["title"] = t
             self._save_template_soon()
-            self._fill_today()
+            self._today_dirty = True                 # Today's checklist is refreshed when you leave the box
 
     def add_step(self, si, oi, text):
         steps = self.template["sections"][si]["options"][oi]["steps"]
@@ -416,7 +430,7 @@ class ChecklistTab(ttk.Frame):
         if t:
             step["text"] = t
             self._save_template_soon()
-            self._fill_today()
+            self._today_dirty = True
 
     def select_option(self, si, oi):
         """Pick (or un-pick) today's option for a section. Updates the cards in place: no re-render."""
@@ -457,11 +471,12 @@ class ChecklistTab(ttk.Frame):
         if t:
             sec["title"] = t
             self._save_template_soon()
-            self._fill_today()
+            self._today_dirty = True
 
     def _section_title_focus_out(self, sec, entry):
         if not entry.get().strip():
             entry.insert(0, sec["title"])
+        self.refresh_today_if_dirty()
 
     # ----------------------------------------------------------------- daily data
     def _date_key(self):
@@ -526,3 +541,4 @@ class ChecklistTab(ttk.Frame):
     def save_current(self):
         self._save_day_now()
         self._save_template_now()
+        self.refresh_today_if_dirty()

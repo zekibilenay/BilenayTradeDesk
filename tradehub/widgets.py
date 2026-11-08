@@ -8,10 +8,14 @@ from . import theme
 class ScrollFrame(ttk.Frame):
     """Vertically scrollable area. Put content into `.inner`."""
 
-    def __init__(self, master, bg=None, **kw):
+    def __init__(self, master, bg=None, wheel_px=None, **kw):
+        """wheel_px: pixels one mouse-wheel notch scrolls. None keeps Tk's default (a big jump)."""
         super().__init__(master, **kw)
         bg = bg or theme.PANEL
+        self.wheel_px, self._wheel_acc = wheel_px, 0.0
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
+        if wheel_px:
+            self.canvas.configure(yscrollincrement=1)          # one "unit" = one pixel
         self.vbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vbar.set)
         self.vbar.pack(side="right", fill="y")
@@ -62,6 +66,15 @@ class ScrollFrame(ttk.Frame):
             if self.inner.winfo_reqheight() <= self.canvas.winfo_height():
                 return
             num = getattr(e, "num", None)
+            if self.wheel_px:
+                # smooth, pixel-exact: a notch is 120 delta units, touchpads send smaller fractions
+                notches = 1 if num == 4 else -1 if num == 5 else (e.delta / 120.0)
+                self._wheel_acc += -notches * self.wheel_px
+                move = int(self._wheel_acc)
+                self._wheel_acc -= move
+                if move:
+                    self.canvas.yview_scroll(move, "units")
+                return
             if num == 4:
                 step = -3
             elif num == 5:

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+- **Psychology section** (example, added once to your checklist): pick how you feel today - Calm & focused, Tired /
+  slept badly, Losing streak, Angry / want revenge, Overconfident after a win, Anxious / afraid to miss out. Each option
+  has its own reminder steps, which show up in Today's checklist. Nothing is counted automatically: it is only your own
+  check. Edit, reorder (little arrows) or delete it like any other section; once deleted it does not come back.
+- Checklist: typing no longer redraws anything. Today's checklist is updated when you leave the box (click elsewhere,
+  press Enter or Tab). Saving to disk still happens in the background.
+- Trade Journal: slower, smoother mouse-wheel scrolling (about 50 px per notch instead of a third of the window);
+  touchpads scroll smoothly too. Other pages keep their speed.
+
 ## 0.4.0
 - **Themes:** Midnight (default), Graphite, OLED Black, Nord, Light and Sand. The selector sits at the right end
   of the tab bar; the theme changes instantly (no restart) and is remembered. Text and background colours of every

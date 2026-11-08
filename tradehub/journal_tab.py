@@ -27,6 +27,7 @@ DIRECTIONS = ["", "Long", "Short"]
 SESSIONS = ["", "Asia", "London", "New York", "London/NY overlap", "Other"]
 THUMB = (640, 400)                  # on-disk thumbnail cache size (max)
 PAGE = 10
+JOURNAL_WHEEL_PX = 50                # pixels per mouse-wheel notch (slow, so you can read your way down)
 GALLERY_COLS = 3                    # screenshots per row
 GALLERY_GAP = 12
 IMG_RATIO = 0.58                    # screenshot box height / width
@@ -659,7 +660,7 @@ class JournalTab(ttk.Frame):
         ent.bind("<KeyRelease>", lambda e=None: self._search_debounce())
         self.stats_lbl = ttk.Label(bar, text="", style="Muted.TLabel")
         self.stats_lbl.pack(side="right")
-        self.feed = ScrollFrame(self, bg=theme.BG)
+        self.feed = ScrollFrame(self, bg=theme.BG, wheel_px=JOURNAL_WHEEL_PX)
         self.feed.pack(fill="both", expand=True, padx=(12, 0), pady=(0, 8))
 
     def _search_debounce(self):

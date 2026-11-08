@@ -114,3 +114,15 @@ def test_coerce_choices_drops_stale_ids():
     assert cm.coerce_choices({"s1": "o1", "s1x": "o1", "s1b": "gone"}, t) == {"s1": "o1"}
     assert cm.coerce_choices({"s1": "gone"}, t) == {}
     assert cm.coerce_choices("junk") == {} and cm.coerce_choices({"a": "b"}) == {"a": "b"}
+
+
+def test_psychology_example_is_in_the_default_template_and_added_only_once():
+    t = _tpl()
+    psy = [s for s in t["sections"] if s["id"] == cm.PSYCHOLOGY_ID]
+    assert len(psy) == 1 and len(psy[0]["options"]) >= 5
+    assert all(o["steps"] for o in psy[0]["options"])
+    assert cm.add_psychology_example(t) is False and len(t["sections"]) == len(_tpl()["sections"])
+    mine = cm.normalize({"sections": [{"id": "x", "title": "Mine", "options": []}]})
+    assert cm.add_psychology_example(mine) is True and [s["id"] for s in mine["sections"]] == ["x", cm.PSYCHOLOGY_ID]
+    assert cm.add_psychology_example(mine) is False
+    assert cm.normalize(copy.deepcopy(mine)) == mine

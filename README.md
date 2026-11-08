@@ -37,7 +37,7 @@ Python 3.10+ with Tk (on Windows the python.org installer includes it).
 
 Or on GitHub: **Actions → Build Windows exe → Run workflow** (downloadable artifact), or push a tag:
 ```bash
-git tag v0.4.0 && git push origin v0.4.0      # builds the exe and creates a GitHub Release
+git tag v0.5.0 && git push origin v0.5.0      # builds the exe and creates a GitHub Release
 ```
 
 ## Development

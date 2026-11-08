@@ -6,6 +6,7 @@ from tkinter import messagebox, ttk
 
 from . import APP_NAME, APP_VERSION, theme
 from .calendar_tab import CalendarTab
+from .checklist_model import add_psychology_example, load_template, save_template
 from .checklist_tab import ChecklistTab
 from .db import Database
 from .journal_tab import JournalTab
@@ -19,6 +20,7 @@ class TradeHubApp(tk.Tk):
         ensure_dirs()
         self.settings = Settings(SETTINGS_PATH)
         self.db = Database(DB_PATH)
+        self._offer_psychology_example()
         theme.set_theme(self.settings.get("theme"))
         theme.apply_theme(self)
 
@@ -41,6 +43,18 @@ class TradeHubApp(tk.Tk):
         # click on an empty spot -> the text cursor leaves whatever box it was in (and that box saves itself)
         self.bind_all("<Button-1>", self._clear_focus, add="+")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _offer_psychology_example(self):
+        """0.5.0: add the example Psychology section to the checklist once. If you delete it later it stays gone."""
+        if self.settings.get("psychology_example_added"):
+            return
+        try:
+            tpl = load_template()
+            if add_psychology_example(tpl):
+                save_template(tpl)
+        except Exception:
+            pass
+        self.settings.set("psychology_example_added", True)
 
     def _maximize(self):
         """Start with the window filling the screen (the title bar stays, so it can still be restored)."""
