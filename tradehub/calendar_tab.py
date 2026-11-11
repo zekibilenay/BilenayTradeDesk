@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from tkinter import ttk
 
 from . import theme
+from .announcements import AnnouncementBox
 from .calendar_data import fetch_feed, load_cache, parse_events, save_cache
 from .paths import CALENDAR_NOTES_PATH, atomic_write_text
 
@@ -95,6 +96,11 @@ class CalendarTab(ttk.Frame):
         ttk.Label(bar, text="Time zone", style="Muted.TLabel").pack(side="right", padx=(0, 6))
         self.btn_refresh = ttk.Button(bar, text="⟳ Refresh", command=lambda: self.refresh(manual=True))
         self.btn_refresh.pack(side="right", padx=(0, 16))
+
+        # announcement box: fills the free space between "Next: ..." and the Refresh button. It is packed last so it
+        # only gets what the other widgets leave over, and it stays invisible while there is nothing to announce.
+        self.announcements = AnnouncementBox(bar, enabled=bool(self.settings.get("announcements")))
+        self.announcements.pack(side="left", fill="x", expand=True, padx=(0, 16))
 
         flt = ttk.Frame(self, padding=(12, 4, 12, 8))
         flt.pack(fill="x")

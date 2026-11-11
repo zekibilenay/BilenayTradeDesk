@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+- **New name: Bilenay Trade Desk** (formerly TradeHub). The window title, taskbar identity, exe (`BilenayTradeDesk.exe`)
+  and release zip (`BilenayTradeDesk-vX.Y.Z-windows.zip`) carry the new name. Your `data/` folder is unchanged: copy it
+  next to the new exe.
+- **Announcement box** on the Economic Calendar page, between *Next: ...* and *Refresh*: the shared Bilenay announcement
+  feed (the one Next Book and Economic Calendar read). It rotates through the announcements, a click opens the board,
+  links ask before opening, it is invisible when there is nothing to show, and `"announcements": false` in
+  `data/settings.json` turns it off completely.
+
 ## 0.5.1
 - Checklist: option cards now start **collapsed** (name, number of steps, Select / Edit), so Today's checklist sits much
   higher on the page. Press **Edit** on a card to open its steps for editing and **Done** to close it again. Clicking an

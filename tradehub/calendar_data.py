@@ -3,10 +3,11 @@ import json
 import urllib.request
 from datetime import datetime, timezone
 
+from . import APP_VERSION
 from .paths import CALENDAR_CACHE_PATH, atomic_write_text
 
 FEED_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-USER_AGENT = "TradeHub/0.1"
+USER_AGENT = f"BilenayTradeDesk/{APP_VERSION}"
 IMPACT_MAP = {"high": "High", "medium": "Medium", "low": "Low", "holiday": "Low", "non-economic": "Low"}
 
 

@@ -14,7 +14,7 @@ from .paths import ASSETS_DIR, DB_PATH, ERROR_LOG_PATH, SETTINGS_PATH, ensure_di
 from .settings import Settings
 
 
-class TradeHubApp(tk.Tk):
+class TradeDeskApp(tk.Tk):
     def __init__(self):
         super().__init__()
         ensure_dirs()
@@ -157,3 +157,6 @@ class TradeHubApp(tk.Tk):
         except Exception:
             pass
         self.destroy()
+
+
+TradeHubApp = TradeDeskApp          # old name, kept for scripts that still import it

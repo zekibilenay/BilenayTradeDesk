@@ -1,2 +1,2 @@
-APP_NAME = "TradeHub"
-APP_VERSION = "0.5.1"
+APP_NAME = "Bilenay Trade Desk"
+APP_VERSION = "0.6.0"

@@ -6,6 +6,7 @@ from .paths import atomic_write_text
 DEFAULTS = {
     "geometry": "1500x900",
     "theme": "Midnight",
+    "announcements": True,                  # shared Bilenay announcement box in the calendar (false = off, no request)
     "psychology_example_added": False,      # the example Psychology section is offered once (0.5.0)
     "tz_offset": 3.0,                       # calendar time zone (UTC+3 = Turkey)
     "cal_view": "week",                     # "today" | "week"
