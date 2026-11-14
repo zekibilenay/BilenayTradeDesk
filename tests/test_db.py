@@ -1,6 +1,6 @@
 import sqlite3
 
-from tradehub.db import Database
+from tradedesk.db import Database
 
 
 def test_trade_crud_and_free_text(tmp_path):

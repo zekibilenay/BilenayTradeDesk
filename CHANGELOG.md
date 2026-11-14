@@ -1,7 +1,33 @@
 # Changelog
 
+## 0.7.0
+- **Name cleanup:** every remaining old name was removed from the code, tests, workflows and docs (the source folder is
+  now `tradedesk/`). The database file is now `data/tradedesk.db`; an existing database from an older version is
+  renamed automatically on first start, so no trade is lost.
+- **New first-start layout** (only for a fresh `data/` folder; your existing checklist and settings are not touched):
+    - Pre-Trade Checklist: **Today's checklist is now at the top**, above the sections.
+    - *Current market phase*: Expansion, Retracement, Reversal, Consolidation.
+    - *What time is it?*: Asia, London open, New York open, New York close.
+    - *Psychology*: Calm & focused, Tired / slept badly, Losing streak, Overconfidence after a win,
+      Anxious / afraid to miss out.
+    - None of these options has steps: press **Edit** on an option card and write your own. (The old example
+      steps and the "Angry / want revenge" option are gone from the defaults.)
+    - Economic Calendar: all impact levels (High, Medium, Low) and all currencies are shown, and the time zone starts
+      at **UTC-5**.
+- **Trade Journal: reuse what you wrote before.** Pair, Session, Entry, Stop, Target and Exit are now drop-downs like
+  Setup: open the list to pick something from an earlier trade, or just type a new value (it is offered next time).
+    - Pair examples: EURUSD, GBPUSD, NQ!. Session examples: Asia, London, New York Open, New York Close, Other.
+      Entry / Stop / Target / Exit have no examples, only your own earlier values (newest first).
+    - **Confirmation follows the pair:** the field is *DXY confirmation* for EURUSD / GBPUSD (any USD pair) and
+      *ES! confirmation* for NQ!. Screenshot types got **ES! HTF** and **ES! LTF** next to DXY HTF / DXY LTF, and after
+      pasting a screenshot the next type is preselected in the right order (NQ!: HTF, LTF, ES! HTF, ES! LTF, Entry,
+      Result).
+    - **Screenshot labels can be new:** the "type of next image" box and the label under each screenshot are
+      editable: pick HTF / LTF / ... or type your own label (e.g. SMT). Labels you used before appear in the list.
+    - Half-typed text of the trade you are editing is never offered as a suggestion.
+
 ## 0.6.0
-- **New name: Bilenay Trade Desk** (formerly TradeHub). The window title, taskbar identity, exe (`BilenayTradeDesk.exe`)
+- **New name: Bilenay Trade Desk** The window title, taskbar identity, exe (`BilenayTradeDesk.exe`)
   and release zip (`BilenayTradeDesk-vX.Y.Z-windows.zip`) carry the new name. Your `data/` folder is unchanged: copy it
   next to the new exe.
 - **Announcement box** on the Economic Calendar page, between *Next: ...* and *Refresh*: the shared Bilenay announcement
@@ -55,7 +81,7 @@
 - Includes everything from 0.3.0 (it was never published as a release):
   - Fixed the jumping tab: the selected tab no longer changes size/position when you switch tabs.
   - New theme pass: deeper background, flat buttons, consistent tabs, slim scrollbars with a solid thumb.
-  - Window icon: the app window and taskbar now show the TradeHub icon (before, only the .exe file had it).
+  - Window icon: the app window and taskbar now show the app icon (before, only the .exe file had it).
     `assets/` is now bundled into the exe build.
   - Checklist: **Day notes removed** (existing notes stay in the database, they are just no longer shown).
   - Checklist: sections can have **choices** (pick one per day, e.g. Current market phase -> Retracement).

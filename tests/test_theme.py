@@ -1,6 +1,6 @@
 import pytest
 
-from tradehub import theme
+from tradedesk import theme
 
 NAMES = theme.names()
 

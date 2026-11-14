@@ -9,7 +9,7 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Bilenay.TradeDesk")
     except Exception:
         pass
-    from tradehub.app import TradeDeskApp
+    from tradedesk.app import TradeDeskApp
     TradeDeskApp().mainloop()
 
 

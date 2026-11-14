@@ -1,6 +1,6 @@
 import copy
 
-from tradehub import checklist_model as cm
+from tradedesk import checklist_model as cm
 
 
 def _tpl():
@@ -18,13 +18,28 @@ def _tick(ids):
 def test_default_template_is_valid_and_stable():
     t = _tpl()
     assert any(len(s["options"]) >= 3 for s in t["sections"])
-    assert all(o["steps"] for s in t["sections"] for o in s["options"])
     assert cm.normalize(copy.deepcopy(t)) == t
+
+
+def test_default_template_has_the_three_sections_without_any_steps():
+    t = _tpl()
+    got = {s["title"]: [o["title"] for o in s["options"]] for s in t["sections"]}
+    assert list(got) == ["Current market phase", "What time is it?", "Psychology"]
+    assert got["Current market phase"] == ["Expansion", "Retracement", "Reversal", "Consolidation"]
+    assert got["What time is it?"] == ["Asia", "London open", "New York open", "New York close"]
+    assert got["Psychology"] == ["Calm & focused", "Tired / slept badly", "Losing streak",
+                                 "Overconfidence after a win", "Anxious / afraid to miss out"]
+    assert _all_step_ids(t) == []
+    ids = [s["id"] for s in t["sections"]] + [o["id"] for s in t["sections"] for o in s["options"]]
+    assert len(ids) == len(set(ids))
 
 
 def test_progress_only_counts_steps_of_selected_options():
     t = _tpl()
     s0, s1 = t["sections"][0], t["sections"][1]
+    for k, sec in enumerate((s0, s1)):                       # the default template has no steps: give it some
+        for o in sec["options"]:
+            o["steps"] = [{"id": f"{o['id']}-{n}", "text": f"step {n}"} for n in range(k + 2)]
     choices = {s0["id"]: s0["options"][0]["id"], s1["id"]: s1["options"][0]["id"]}
     n = len(s0["options"][0]["steps"]) + len(s1["options"][0]["steps"])
     assert cm.evaluate(t, {}, choices)["total"] == n
@@ -114,15 +129,3 @@ def test_coerce_choices_drops_stale_ids():
     assert cm.coerce_choices({"s1": "o1", "s1x": "o1", "s1b": "gone"}, t) == {"s1": "o1"}
     assert cm.coerce_choices({"s1": "gone"}, t) == {}
     assert cm.coerce_choices("junk") == {} and cm.coerce_choices({"a": "b"}) == {"a": "b"}
-
-
-def test_psychology_example_is_in_the_default_template_and_added_only_once():
-    t = _tpl()
-    psy = [s for s in t["sections"] if s["id"] == cm.PSYCHOLOGY_ID]
-    assert len(psy) == 1 and len(psy[0]["options"]) >= 5
-    assert all(o["steps"] for o in psy[0]["options"])
-    assert cm.add_psychology_example(t) is False and len(t["sections"]) == len(_tpl()["sections"])
-    mine = cm.normalize({"sections": [{"id": "x", "title": "Mine", "options": []}]})
-    assert cm.add_psychology_example(mine) is True and [s["id"] for s in mine["sections"]] == ["x", cm.PSYCHOLOGY_ID]
-    assert cm.add_psychology_example(mine) is False
-    assert cm.normalize(copy.deepcopy(mine)) == mine

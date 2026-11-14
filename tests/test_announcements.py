@@ -6,8 +6,8 @@ import urllib.request
 
 import pytest
 
-from tradehub import announcements as an
-from tradehub import theme
+from tradedesk import announcements as an
+from tradedesk import theme
 
 D = datetime.date
 

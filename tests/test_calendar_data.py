@@ -1,4 +1,4 @@
-from tradehub import calendar_data as cd
+from tradedesk import calendar_data as cd
 
 RAW = [
     {"title": "Unemployment Claims", "country": "USD", "date": "2026-10-08T08:30:00-04:00", "impact": "Medium",
