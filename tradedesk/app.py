@@ -32,7 +32,7 @@ class TradeDeskApp(tk.Tk):
         nb.pack(fill="both", expand=True)
         self.checklist = ChecklistTab(nb, self.db)
         self.calendar = CalendarTab(nb, self.settings)
-        self.journal = JournalTab(nb, self.db)
+        self.journal = JournalTab(nb, self.db, self.settings)
         nb.add(self.checklist, text="Pre-Trade Checklist")
         nb.add(self.calendar, text="Economic Calendar")
         nb.add(self.journal, text="Trade Journal")

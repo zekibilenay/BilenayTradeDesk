@@ -221,3 +221,176 @@ def bind_autosize(txt, min_lines=1, max_lines=30):
     txt.bind("<Configure>", lambda e=None: autosize_text(txt, min_lines, max_lines), add="+")
     txt.bind("<KeyRelease>", lambda e=None: autosize_text(txt, min_lines, max_lines), add="+")
     txt.after(50, lambda: autosize_text(txt, min_lines, max_lines))
+
+
+class SuggestBox(tk.Frame):
+    """Text box with a drop-down of earlier values. Every value in the list has a ✕ on its right: it removes the value
+    from the suggestions (get_values / on_delete are supplied by the caller; the box never touches saved data).
+    You can always type something new. Clicking a value fills the box and calls on_pick(value)."""
+
+    ROW_H, MAX_ROWS = 28, 8
+    _active = None                    # the box whose list is open (only one at a time)
+    _hooked = False
+
+    def __init__(self, master, textvariable, get_values, on_delete=None, on_pick=None, width=12, bg=None):
+        bg = bg or theme.PANEL
+        super().__init__(master, bg=bg)
+        self.var, self.get_values, self.on_delete, self.on_pick = textvariable, get_values, on_delete, on_pick
+        self._pop = None
+        self.typed = False                # True once text was typed by hand (not picked from the list)
+        self.entry = ttk.Entry(self, textvariable=textvariable, width=width)
+        self.entry.pack(side="left", fill="x", expand=True)
+        self.arrow = tk.Label(self, text="▾", bg=theme.PANEL2, fg=theme.MUTED, cursor="hand2", padx=7,
+                              font=(theme.F["ui"], 10))
+        self.arrow.pack(side="left", fill="y", padx=(2, 0))
+        self.arrow.bind("<Button-1>", lambda e=None: self.toggle())
+        self.arrow.bind("<Enter>", lambda e=None: self.arrow.configure(fg=theme.FG))
+        self.arrow.bind("<Leave>", lambda e=None: self.arrow.configure(fg=theme.MUTED))
+        self.entry.bind("<Key>", self._on_key, add="+")
+        self.entry.bind("<Down>", lambda e=None: (self.open(), "break")[1])
+        self.entry.bind("<Escape>", lambda e=None: self.close(), add="+")
+        self.entry.bind("<Tab>", lambda e=None: self.close(), add="+")
+        self._hook_global()
+
+    # one set of app-wide bindings closes the list when you click or scroll somewhere else
+    def _hook_global(self):
+        if SuggestBox._hooked:
+            return
+        SuggestBox._hooked = True
+        root = self.winfo_toplevel()
+        root.bind_all("<Button-1>", SuggestBox._outside, add="+")
+        root.bind_all("<MouseWheel>", SuggestBox._outside, add="+")
+        root.bind_all("<<NotebookTabChanged>>", lambda e=None: SuggestBox._close_active(), add="+")
+        root.bind("<Configure>", lambda e: SuggestBox._close_active() if e.widget is root else None, add="+")
+
+    @staticmethod
+    def _close_active():
+        box = SuggestBox._active
+        if box is not None:
+            try:
+                box.close()
+            except tk.TclError:
+                SuggestBox._active = None
+
+    @staticmethod
+    def _outside(event):
+        box = SuggestBox._active
+        if box is None:
+            return
+        try:
+            w = str(event.widget)
+            if box._pop is not None and w.startswith(str(box._pop)):
+                return
+            if w in (str(box.entry), str(box.arrow)):
+                return
+            box.close()
+        except (tk.TclError, AttributeError):
+            SuggestBox._active = None
+
+    def _on_key(self, e):
+        if len(e.keysym) == 1 or e.keysym in ("BackSpace", "Delete"):
+            self.typed = True
+
+    def toggle(self):
+        self.close() if self._pop is not None else self.open()
+
+    def close(self):
+        pop, self._pop = self._pop, None
+        if SuggestBox._active is self:
+            SuggestBox._active = None
+        if pop is not None:
+            try:
+                pop.destroy()
+            except tk.TclError:
+                pass
+
+    def open(self):
+        SuggestBox._close_active()
+        values = list(self.get_values() or [])
+        self._pop = pop = tk.Toplevel(self)
+        SuggestBox._active = self
+        pop.overrideredirect(True)
+        pop.configure(bg=theme.BORDER)
+        self._values = values
+        self._body = tk.Frame(pop, bg=theme.PANEL2)
+        self._body.pack(fill="both", expand=True, padx=1, pady=1)
+        self._fill()
+        self._place()
+        self.entry.focus_set()
+
+    def _fill(self):
+        """(Re)build the rows. Called on open and after a ✕, so the list shrinks in place."""
+        for w in self._body.winfo_children():
+            w.destroy()
+        ui = theme.F["ui"]
+        if not self._values:
+            tk.Label(self._body, text="Nothing saved yet: just type.", bg=theme.PANEL2, fg=theme.MUTED,
+                     font=(ui, 10), padx=10, pady=6, anchor="w").pack(fill="x")
+            return
+        n = len(self._values)
+        canvas = tk.Canvas(self._body, bg=theme.PANEL2, highlightthickness=0, bd=0,
+                           height=min(n, self.MAX_ROWS) * self.ROW_H, width=max(self.winfo_width(), 240))
+        canvas.pack(side="left", fill="both", expand=True)
+        rows = tk.Frame(canvas, bg=theme.PANEL2)
+        win = canvas.create_window((0, 0), window=rows, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
+        rows.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        if n > self.MAX_ROWS:
+            bar = ttk.Scrollbar(self._body, orient="vertical", command=canvas.yview)
+            bar.pack(side="right", fill="y")
+            canvas.configure(yscrollcommand=bar.set)
+
+        def wheel(e):
+            if n > self.MAX_ROWS:
+                canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+            return "break"                               # the page behind the list must not scroll
+        for value in self._values:
+            row = tk.Frame(rows, bg=theme.PANEL2, height=self.ROW_H)
+            row.pack(fill="x")
+            row.pack_propagate(False)
+            x = tk.Label(row, text="✕", bg=theme.PANEL2, fg=theme.MUTED, font=(ui, 10), padx=10, cursor="hand2")
+            x.pack(side="right", fill="y")
+            lbl = tk.Label(row, text=value, bg=theme.PANEL2, fg=theme.FG, font=(ui, 10), anchor="w", padx=10,
+                           cursor="hand2")
+            lbl.pack(side="left", fill="both", expand=True)
+            for w in (row, lbl):
+                w.bind("<Button-1>", lambda e=None, v=value: self._pick(v))
+                w.bind("<Enter>", lambda e=None, r=row, l=lbl, c=x: [t.configure(bg=theme.ACCENT_BG) for t in (r, l, c)])
+                w.bind("<Leave>", lambda e=None, r=row, l=lbl, c=x: [t.configure(bg=theme.PANEL2) for t in (r, l, c)])
+            x.bind("<Button-1>", lambda e=None, v=value: (self._remove(v), "break")[1])
+            x.bind("<Enter>", lambda e=None, r=row, l=lbl, c=x: ([t.configure(bg=theme.ACCENT_BG) for t in (r, l)],
+                                                                 c.configure(bg=theme.ACCENT_BG, fg=theme.RED)))
+            x.bind("<Leave>", lambda e=None, r=row, l=lbl, c=x: [t.configure(bg=theme.PANEL2) for t in (r, l)]
+                   + [c.configure(bg=theme.PANEL2, fg=theme.MUTED)])
+            for w in (row, lbl, x):
+                w.bind("<MouseWheel>", wheel)
+        canvas.bind("<MouseWheel>", wheel)
+
+    def _place(self):
+        self.update_idletasks()
+        pop = self._pop
+        pop.update_idletasks()
+        w, h = pop.winfo_reqwidth(), pop.winfo_reqheight()
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height()
+        if y + h > self.winfo_screenheight() - 40:             # no room below: open upwards
+            y = max(0, self.winfo_rooty() - h)
+        pop.geometry(f"{w}x{h}+{x}+{y}")
+        pop.lift()
+
+    def _pick(self, value):
+        self.typed = False
+        self.var.set(value)
+        self.close()
+        self.entry.focus_set()
+        self.entry.icursor("end")
+        if self.on_pick:
+            self.on_pick(value)
+
+    def _remove(self, value):
+        if self.on_delete:
+            self.on_delete(value)
+        self._values = [v for v in self._values if v != value]
+        if self._pop is not None:
+            self._fill()
+            self._place()

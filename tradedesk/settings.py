@@ -8,6 +8,7 @@ DEFAULTS = {
     "theme": "Midnight",
     "announcements": True,                  # shared Bilenay announcement box in the calendar (false = off, no request)
     "tz_offset": -5.0,                      # calendar time zone (UTC-5)
+    "hidden_suggestions": {},               # journal drop-down values removed with the ✕: {list name: [values]}
     "cal_view": "week",                     # "today" | "week"
     "cal_impacts": ["High", "Medium", "Low"],         # every impact level
     "cal_currencies": ["ALL", "AUD", "CAD", "CHF", "CNY", "EUR", "GBP", "JPY", "NZD", "USD"],   # every currency

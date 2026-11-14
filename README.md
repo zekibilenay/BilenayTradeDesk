@@ -8,7 +8,7 @@ the announcement file (see *Announcements & privacy* below).
 |---|---|
 | **Pre-Trade Checklist** | Sections hold options (pick one, e.g. market phase); every option holds your own steps. The steps of the options you pick form **Today's checklist** at the top of the page, which you tick off as you trade. Add, edit and delete everything directly on the page. |
 | **Economic Calendar** | ForexFactory weekly feed, impact/currency filters, time-zone picker with a live clock, offline cache, rich-text notes. |
-| **Trade Journal** | A scrolling feed of trade cards: pair, session and levels (free text, e.g. liquidity names; earlier entries can be picked again from the drop-downs), HTF / LTF / DXY (or ES! for NQ!) screenshots with your own labels, three per row (paste with Ctrl+V), reasoning and review. New trades are edited with autosave; press **Finish** to turn one into a compact read-only card. |
+| **Trade Journal** | A scrolling feed of trade cards: pair, session and levels (free text, e.g. liquidity names; earlier entries can be picked again from the drop-downs and removed with ✕), up to two correlated pairs per trade (+ button), HTF / LTF / DXY (or ES! for NQ!) screenshots with your own labels, three per row (paste with Ctrl+V), reasoning and review. New trades are edited with autosave; press **Finish** to turn one into a compact read-only card. |
 
 The tabs are independent: the checklist has no calendar widgets. 
 
@@ -37,7 +37,7 @@ Python 3.10+ with Tk (on Windows the python.org installer includes it).
 
 Or on GitHub: **Actions → Build Windows exe → Run workflow** (downloadable artifact), or push a tag:
 ```bash
-git tag v0.7.0 && git push origin v0.7.0      # builds the exe and creates a GitHub Release
+git tag v0.7.1 && git push origin v0.7.1      # builds the exe and creates a GitHub Release
 ```
 
 ## Development

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.1
+- **Example steps in the checklist:** the first-start template now has two example steps for every option
+  (Expansion, Retracement, Reversal, Consolidation, Asia, London open, New York open, New York close and the five
+  Psychology options), and the three sections are labelled *(example)*. Edit or delete them freely.
+- **Trade Journal: correlation instead of confirmation.**
+    - *DXY / ES! confirmation* is now **Correlation**. Next to Setup there is a **+**: press it, choose the correlated
+      pair (DXY and ES! are offered, the one that fits the traded pair first, or type any pair) and write what the
+      setup was in the box next to it. After the first correlation a second **+** appears on its right for a second
+      one. The small ✕ removes a correlation again.
+    - Trades from older versions keep their text: the old *DXY confirmation* becomes the first correlation (pair DXY,
+      or ES! for NQ! trades). This happens once, automatically.
+    - On a finished trade the correlations are shown as their own tiles.
+- **Mistakes** moved to its own line under Entry / Stop / Target / Exit, and earlier mistakes can be picked again from
+  the drop-down like the other boxes.
+- **Remove old values with ✕:** every value in a drop-down list (pair, session, entry, stop, target, exit, setup,
+  correlation, mistakes and screenshot labels, the built-in examples too) has a ✕ on its right. It only removes the
+  value from the suggestions: your earlier trades keep it, and typing it again brings it back.
+- The drop-downs of these boxes are now an own list (type in the box, press the ▾ or the Down key to open it).
+
 ## 0.7.0
 - **Name cleanup:** every remaining old name was removed from the code, tests, workflows and docs (the source folder is
   now `tradedesk/`). The database file is now `data/tradedesk.db`; an existing database from an older version is

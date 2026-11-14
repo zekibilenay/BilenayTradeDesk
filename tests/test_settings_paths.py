@@ -8,6 +8,7 @@ def test_first_start_calendar_defaults(tmp_path):
     assert set(s.get("cal_impacts")) == {"High", "Medium", "Low"}
     assert set(s.get("cal_currencies")) == {"ALL", "AUD", "CAD", "CHF", "CNY", "EUR", "GBP", "JPY", "NZD", "USD"}
     assert "psychology_example_added" not in DEFAULTS
+    assert s.get("hidden_suggestions") == {}
 
 
 def test_saved_settings_still_win(tmp_path):

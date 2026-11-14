@@ -19,19 +19,62 @@ def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def _section(sid, title, *option_titles) -> dict:
-    """A section whose options have no steps yet: you add your own steps on the page (Edit on an option card)."""
-    return {"id": sid, "title": title,
-            "options": [{"id": f"{sid}_{k + 1}", "title": t, "steps": []} for k, t in enumerate(option_titles)]}
+def _section(sid, title, *options) -> dict:
+    """options: (title, step, step, ...). Step ids are fixed (option id + number), so ticks saved for them survive."""
+    secs = []
+    for k, (otitle, *steps) in enumerate(options):
+        oid = f"{sid}_{k + 1}"
+        secs.append({"id": oid, "title": otitle,
+                     "steps": [{"id": f"{oid}_s{n + 1}", "text": t} for n, t in enumerate(steps)]})
+    return {"id": sid, "title": title, "options": secs}
 
 
 def default_template() -> dict:
-    """First-start layout: only the sections and their options, no steps. Write your own steps on the checklist page."""
+    """First-start layout: example sections with a couple of example steps per option. Edit, delete or replace
+    everything directly on the checklist page (Edit on an option card)."""
     return {"version": 4, "sections": [
-        _section("phase", "Current market phase", "Expansion", "Retracement", "Reversal", "Consolidation"),
-        _section("time", "What time is it?", "Asia", "London open", "New York open", "New York close"),
-        _section("psychology", "Psychology", "Calm & focused", "Tired / slept badly", "Losing streak",
-                 "Overconfidence after a win", "Anxious / afraid to miss out"),
+        _section("phase", "Current market phase (example)",
+                 ("Expansion",
+                  "Mark the HTF zone price is expanding from",
+                  "Wait for a pullback into an entry zone before looking for a trade"),
+                 ("Retracement",
+                  "Mark the HTF zone and the liquidity price is retracing into",
+                  "Wait for the liquidity to be taken before looking for an entry"),
+                 ("Reversal",
+                  "Wait for a structure shift on the LTF",
+                  "Confirm with a retest before entering"),
+                 ("Consolidation",
+                  "Mark the range high and low",
+                  "No trade in the middle of the range: wait for a sweep or a clear break")),
+        _section("time", "What time is it? (example)",
+                 ("Asia",
+                  "Mark the Asia high and low",
+                  "Do not trade the range: plan for the London sweep"),
+                 ("London open",
+                  "Check if the Asia high or low was swept",
+                  "Define the current market phase before entering"),
+                 ("New York open",
+                  "Mark the London high and low and the previous day's levels",
+                  "Wait for a liquidity sweep and a clear reaction before entering"),
+                 ("New York close",
+                  "Close or reduce open positions if they are not at target",
+                  "Review the day: no new trades unless they are part of my plan")),
+        _section("psychology", "Psychology (example)",
+                 ("Calm & focused",
+                  "Only look for the setups in my plan",
+                  "Do not move the stop after entering"),
+                 ("Tired / slept badly",
+                  "Cut the lot size in half",
+                  "Maximum one planned trade, then close the chart"),
+                 ("Losing streak",
+                  "Reduce the lot size or skip trading today",
+                  "Read my last losses in the journal: am I repeating the same mistake?"),
+                 ("Overconfidence after a win",
+                  "The next trade is independent: same lot, same rules",
+                  "No trade outside my plan"),
+                 ("Anxious / afraid to miss out",
+                  "Do not chase a move that already left",
+                  "Waiting for the next setup is also a position")),
     ]}
 
 

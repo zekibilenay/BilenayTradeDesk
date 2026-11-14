@@ -3,10 +3,12 @@ import json
 import sqlite3
 from datetime import datetime
 
+from .journal_model import correlation_symbol
+
 TRADE_FIELDS = (
     "trade_date", "trade_time", "instrument", "direction", "session",
     "entry", "sl", "tp", "exit_price", "outcome", "result_r",
-    "setup", "dxy_conf", "mistakes", "why", "review", "cl_verdict", "cl_score", "status",
+    "setup", "corr1_pair", "corr1_note", "corr2_pair", "corr2_note", "mistakes", "why", "review", "cl_verdict", "cl_score", "status",
 )
 
 
@@ -27,7 +29,11 @@ CREATE TABLE IF NOT EXISTS {name} (
     outcome     TEXT NOT NULL DEFAULT 'Open',
     result_r    TEXT NOT NULL DEFAULT '',
     setup       TEXT NOT NULL DEFAULT '',
-    dxy_conf    TEXT NOT NULL DEFAULT '',
+    dxy_conf    TEXT NOT NULL DEFAULT '',            -- unused since 0.7.1 (moved to corr1_*); kept so old data survives
+    corr1_pair  TEXT NOT NULL DEFAULT '',            -- correlation pair of the trade (e.g. DXY, ES!) and a note about it
+    corr1_note  TEXT NOT NULL DEFAULT '',
+    corr2_pair  TEXT NOT NULL DEFAULT '',            -- an optional second correlation
+    corr2_note  TEXT NOT NULL DEFAULT '',
     mistakes    TEXT NOT NULL DEFAULT '',
     why         TEXT NOT NULL DEFAULT '',
     review      TEXT NOT NULL DEFAULT '',
@@ -116,6 +122,16 @@ class Database:
             self.conn.execute("ALTER TABLE trades ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")
         if "choices" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(checklist_days)")}:
             self.conn.execute("ALTER TABLE checklist_days ADD COLUMN choices TEXT NOT NULL DEFAULT '{}'")
+        # 0.7.1: correlation pairs (up to two per trade). The single "DXY confirmation" text of older versions becomes
+        # the note of the first correlation; its pair is DXY / ES! depending on the traded pair.
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(trades)")}
+        for col in ("corr1_pair", "corr1_note", "corr2_pair", "corr2_note"):
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE trades ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+        old = self.conn.execute("SELECT id, instrument, dxy_conf FROM trades WHERE dxy_conf != ''").fetchall()
+        for r in old:
+            self.conn.execute("UPDATE trades SET corr1_pair = ?, corr1_note = ?, dxy_conf = '' WHERE id = ?",
+                              (correlation_symbol(r["instrument"]), r["dxy_conf"], r["id"]))
         for table, column, mapping in VALUE_MAP:
             for old, new in mapping.items():
                 self.conn.execute(f"UPDATE {table} SET {column} = ? WHERE {column} = ?", (new, old))
@@ -176,7 +192,7 @@ class Database:
             params.append(outcome)
         if search:
             like = f"%{search}%"
-            cols = ("instrument", "setup", "dxy_conf", "mistakes", "why", "review", "direction", "session",
+            cols = ("instrument", "setup", "corr1_pair", "corr1_note", "corr2_pair", "corr2_note", "mistakes", "why", "review", "direction", "session",
                     "entry", "sl", "tp", "exit_price")
             where.append("(" + " OR ".join(f"{c} LIKE ?" for c in cols) + ")")
             params.extend([like] * len(cols))
@@ -196,17 +212,22 @@ class Database:
         self.conn.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
         self.conn.commit()
 
+    # drop-down groups that read several columns at once
+    VALUE_GROUPS = {"corr_pair": ("corr1_pair", "corr2_pair"), "corr_note": ("corr1_note", "corr2_note")}
+    VALUE_COLUMNS = ("setup", "instrument", "session", "entry", "sl", "tp", "exit_price", "mistakes")
+
     def distinct_values(self, column, exclude_id=None, recent_first=False):
-        """Values already used in earlier trades (for the drop-down suggestions). `exclude_id` leaves out the trade
-        being typed right now, so half-typed text does not turn into a suggestion."""
-        if column not in ("setup", "dxy_conf", "instrument", "session", "entry", "sl", "tp", "exit_price"):
+        """Values already used in earlier trades (for the drop-down suggestions). `column` is a column name or a
+        group (corr_pair, corr_note). `exclude_id` leaves out the trade being typed right now, so half-typed text
+        does not turn into a suggestion."""
+        cols = self.VALUE_GROUPS.get(column) or ((column,) if column in self.VALUE_COLUMNS else ())
+        if not cols:
             return []
-        sql = f"SELECT {column} AS v FROM trades WHERE {column} != ''"
-        params = []
-        if exclude_id is not None:
-            sql += " AND id != ?"
-            params.append(exclude_id)
-        sql += f" GROUP BY {column} ORDER BY " + ("MAX(id) DESC" if recent_first else f"{column}")
+        where = " AND id != ?" if exclude_id is not None else ""
+        parts = [f"SELECT id, {c} AS v FROM trades WHERE {c} != ''{where}" for c in cols]
+        params = [exclude_id] * len(cols) if exclude_id is not None else []
+        sql = ("SELECT v FROM (" + " UNION ALL ".join(parts) + ") GROUP BY v ORDER BY "
+               + ("MAX(id) DESC" if recent_first else "v"))
         return [r["v"] for r in self.conn.execute(sql, params).fetchall()]
 
     def distinct_kinds(self):

@@ -21,25 +21,23 @@ def test_default_template_is_valid_and_stable():
     assert cm.normalize(copy.deepcopy(t)) == t
 
 
-def test_default_template_has_the_three_sections_without_any_steps():
+def test_default_template_has_three_example_sections_with_steps():
     t = _tpl()
     got = {s["title"]: [o["title"] for o in s["options"]] for s in t["sections"]}
-    assert list(got) == ["Current market phase", "What time is it?", "Psychology"]
-    assert got["Current market phase"] == ["Expansion", "Retracement", "Reversal", "Consolidation"]
-    assert got["What time is it?"] == ["Asia", "London open", "New York open", "New York close"]
-    assert got["Psychology"] == ["Calm & focused", "Tired / slept badly", "Losing streak",
-                                 "Overconfidence after a win", "Anxious / afraid to miss out"]
-    assert _all_step_ids(t) == []
-    ids = [s["id"] for s in t["sections"]] + [o["id"] for s in t["sections"] for o in s["options"]]
+    assert list(got) == ["Current market phase (example)", "What time is it? (example)", "Psychology (example)"]
+    assert got["Current market phase (example)"] == ["Expansion", "Retracement", "Reversal", "Consolidation"]
+    assert got["What time is it? (example)"] == ["Asia", "London open", "New York open", "New York close"]
+    assert got["Psychology (example)"] == ["Calm & focused", "Tired / slept badly", "Losing streak",
+                                           "Overconfidence after a win", "Anxious / afraid to miss out"]
+    assert all(len(o["steps"]) == 2 for s in t["sections"] for o in s["options"])
+    ids = _all_step_ids(t) + [s["id"] for s in t["sections"]] + [o["id"] for s in t["sections"] for o in s["options"]]
     assert len(ids) == len(set(ids))
+    assert cm.default_template() == cm.default_template()          # same ids every time -> saved ticks stay valid
 
 
 def test_progress_only_counts_steps_of_selected_options():
     t = _tpl()
     s0, s1 = t["sections"][0], t["sections"][1]
-    for k, sec in enumerate((s0, s1)):                       # the default template has no steps: give it some
-        for o in sec["options"]:
-            o["steps"] = [{"id": f"{o['id']}-{n}", "text": f"step {n}"} for n in range(k + 2)]
     choices = {s0["id"]: s0["options"][0]["id"], s1["id"]: s1["options"][0]["id"]}
     n = len(s0["options"][0]["steps"]) + len(s1["options"][0]["steps"])
     assert cm.evaluate(t, {}, choices)["total"] == n
