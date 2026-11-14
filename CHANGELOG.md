@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.2
+- **Trade Journal: date as DD-MM-YYYY.** The date box is typed and shown as DD-MM-YYYY (14-11-2026). `5.1.2026`,
+  `05/01/2026` and the old `2026-11-14` are accepted too and are tidied up when you leave the box. Behind the scenes
+  the date is still stored as YYYY-MM-DD, so sorting is unchanged and no existing trade is touched.
+- **Enter saves a value for good.** Type something in Pair, Session, Setup, Correlation (pair and setup), Entry, Stop,
+  Target, Exit, Risk %, Planned R:R, Mistakes or an image label and press **Enter**: it is saved and offered in the
+  drop-down of every later trade, even if no other trade uses it yet. The ✕ in the list still removes it.
+- **Direction** has no empty entry any more: only Long and Short.
+- **Setup and correlations share the row equally.** Only Setup: it takes the whole row. With one correlation Setup and
+  Correlation are half each; with two correlations a third each (the **+** moves to the right edge).
+- **Mistakes is as wide as Entry** and sits on a new line under Entry / Stop / Target / Exit, after two new boxes:
+  **Risk %** and **Planned R:R** (free text, e.g. `1` and `1:3`). Both are shown on finished trades and are searchable.
+- Existing databases get the two new columns automatically on first start.
+
 ## 0.7.1
 - **Example steps in the checklist:** the first-start template now has two example steps for every option
   (Expansion, Retracement, Reversal, Consolidation, Asia, London open, New York open, New York close and the five

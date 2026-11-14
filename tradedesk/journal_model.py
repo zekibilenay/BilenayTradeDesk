@@ -1,4 +1,7 @@
-"""Journal helpers that do not need the UI: suggestion lists, correlation pairs, image-type order, hidden suggestions."""
+"""Journal helpers that do not need the UI: dates, suggestion lists, correlation pairs, image-type order, saved and hidden suggestions."""
+import re
+from datetime import date
+
 
 DEFAULT_PAIRS = ["EURUSD", "GBPUSD", "NQ!"]
 DEFAULT_SESSIONS = ["Asia", "London", "New York Open", "New York Close", "Other"]
@@ -75,3 +78,56 @@ def unhide_value(hidden, group, value):
         if not out[group]:
             del out[group]
     return out
+
+
+# ---- values saved with Enter ----------------------------------------------------------------------------------
+# Typing a value in a drop-down box and pressing Enter saves it for good, so it is offered in every later trade
+# (even when no other trade uses it yet). {group: [values]}, oldest first.
+
+def remember_value(saved, group, value):
+    """-> new dict with `value` saved in `group` (same content if it was already there or is blank)."""
+    out = {k: list(v) for k, v in (saved or {}).items()}
+    value = str(value or "").strip()
+    if value and value not in out.setdefault(group, []):
+        out[group].append(value)
+    if not out.get(group):
+        out.pop(group, None)
+    return out
+
+
+def saved_values(saved, group, newest_first=False):
+    vals = list((saved or {}).get(group, []))
+    return vals[::-1] if newest_first else vals
+
+
+# ---- dates: shown as DD-MM-YYYY, stored as YYYY-MM-DD (so sorting and filtering keep working) ---------------
+
+_DMY = re.compile(r"^\s*(\d{1,2})[-./](\d{1,2})[-./](\d{4})\s*$")
+_YMD = re.compile(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*$")
+
+
+def parse_date(text):
+    """What the person typed (DD-MM-YYYY; also DD.MM.YYYY, DD/MM/YYYY or the old YYYY-MM-DD) -> 'YYYY-MM-DD',
+    or None when it is not a real date."""
+    text = str(text or "")
+    m = _DMY.match(text)
+    if m:
+        d, mo, y = (int(x) for x in m.groups())
+    else:
+        m = _YMD.match(text)
+        if not m:
+            return None
+        y, mo, d = (int(x) for x in m.groups())
+    try:
+        return date(y, mo, d).isoformat()
+    except ValueError:
+        return None
+
+
+def display_date(iso):
+    """'YYYY-MM-DD' (as stored) -> 'DD-MM-YYYY' (as shown). Anything that is not a stored date is returned as it is."""
+    m = _YMD.match(str(iso or ""))
+    if not m:
+        return str(iso or "")
+    y, mo, d = m.groups()
+    return f"{int(d):02d}-{int(mo):02d}-{y}"

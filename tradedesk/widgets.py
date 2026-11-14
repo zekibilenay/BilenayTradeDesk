@@ -226,16 +226,19 @@ def bind_autosize(txt, min_lines=1, max_lines=30):
 class SuggestBox(tk.Frame):
     """Text box with a drop-down of earlier values. Every value in the list has a ✕ on its right: it removes the value
     from the suggestions (get_values / on_delete are supplied by the caller; the box never touches saved data).
-    You can always type something new. Clicking a value fills the box and calls on_pick(value)."""
+    You can always type something new: pressing Enter in the box closes the list and calls on_enter(value), which the
+    caller uses to save the value for good. Clicking a value fills the box and calls on_pick(value)."""
 
     ROW_H, MAX_ROWS = 28, 8
     _active = None                    # the box whose list is open (only one at a time)
     _hooked = False
 
-    def __init__(self, master, textvariable, get_values, on_delete=None, on_pick=None, width=12, bg=None):
+    def __init__(self, master, textvariable, get_values, on_delete=None, on_pick=None, width=12, bg=None,
+                 on_enter=None):
         bg = bg or theme.PANEL
         super().__init__(master, bg=bg)
         self.var, self.get_values, self.on_delete, self.on_pick = textvariable, get_values, on_delete, on_pick
+        self.on_enter = on_enter
         self._pop = None
         self.typed = False                # True once text was typed by hand (not picked from the list)
         self.entry = ttk.Entry(self, textvariable=textvariable, width=width)
@@ -250,6 +253,7 @@ class SuggestBox(tk.Frame):
         self.entry.bind("<Down>", lambda e=None: (self.open(), "break")[1])
         self.entry.bind("<Escape>", lambda e=None: self.close(), add="+")
         self.entry.bind("<Tab>", lambda e=None: self.close(), add="+")
+        self.entry.bind("<Return>", self._enter, add="+")
         self._hook_global()
 
     # one set of app-wide bindings closes the list when you click or scroll somewhere else
@@ -290,6 +294,13 @@ class SuggestBox(tk.Frame):
     def _on_key(self, e):
         if len(e.keysym) == 1 or e.keysym in ("BackSpace", "Delete"):
             self.typed = True
+
+    def _enter(self, _e=None):
+        value = self.var.get().strip()
+        self.close()
+        if value and self.on_enter:
+            self.on_enter(value)
+        return "break"
 
     def toggle(self):
         self.close() if self._pop is not None else self.open()

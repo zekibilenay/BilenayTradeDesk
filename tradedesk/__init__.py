@@ -1,2 +1,2 @@
 APP_NAME = "Bilenay Trade Desk"
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"

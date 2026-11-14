@@ -104,3 +104,38 @@ def test_old_dxy_confirmation_moves_into_the_first_correlation(tmp_path):
     db.update_trade(1, {"corr1_pair": "", "corr1_note": ""})
     db.close()
     assert Database(p).get_trade(1)["corr1_note"] == ""          # a second start must not move anything again
+
+
+def test_dates_are_typed_as_dd_mm_yyyy_and_stored_as_iso():
+    assert jm.parse_date("14-11-2026") == "2026-11-14"
+    assert jm.parse_date("5.1.2026") == "2026-01-05" and jm.parse_date("05/01/2026") == "2026-01-05"
+    assert jm.parse_date("2026-11-14") == "2026-11-14"                 # the old way of typing still works
+    for bad in ("", "31-02-2026", "2026-13-01", "14-11-26", "tomorrow", None):
+        assert jm.parse_date(bad) is None
+    assert jm.display_date("2026-11-14") == "14-11-2026"
+    assert jm.display_date("") == "" and jm.display_date(None) == "" and jm.display_date("junk") == "junk"
+    assert jm.parse_date(jm.display_date("2026-03-09")) == "2026-03-09"
+
+
+def test_value_typed_with_enter_is_saved_per_group():
+    s = jm.remember_value({}, "entry", " PDH sweep ")
+    s = jm.remember_value(s, "entry", "PDH sweep")                      # twice = once
+    s = jm.remember_value(s, "entry", "PDL sweep")
+    s = jm.remember_value(s, "risk_pct", "1")
+    s = jm.remember_value(s, "risk_pct", "   ")                          # blank is ignored
+    assert s == {"entry": ["PDH sweep", "PDL sweep"], "risk_pct": ["1"]}
+    assert jm.saved_values(s, "entry") == ["PDH sweep", "PDL sweep"]
+    assert jm.saved_values(s, "entry", newest_first=True) == ["PDL sweep", "PDH sweep"]
+    assert jm.saved_values(s, "nothing") == [] and jm.saved_values(None, "entry") == []
+    assert jm.remember_value(None, "x", " ") == {}
+    before = {"a": ["1"]}
+    jm.remember_value(before, "a", "2")
+    assert before == {"a": ["1"]}                                        # input is not modified
+
+
+def test_saved_value_is_offered_even_when_no_trade_uses_it_and_can_be_removed():
+    saved = jm.remember_value({}, "setup", "Judas swing")
+    offered = jm.visible(jm.merge_unique([], jm.saved_values(saved, "setup"), ["OB retest"]), None)
+    assert offered == ["Judas swing", "OB retest"]
+    hidden = jm.hide_value({}, "setup", "Judas swing")
+    assert jm.visible(offered, hidden["setup"]) == ["OB retest"]

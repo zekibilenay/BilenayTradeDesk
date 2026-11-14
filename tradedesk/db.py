@@ -8,7 +8,7 @@ from .journal_model import correlation_symbol
 TRADE_FIELDS = (
     "trade_date", "trade_time", "instrument", "direction", "session",
     "entry", "sl", "tp", "exit_price", "outcome", "result_r",
-    "setup", "corr1_pair", "corr1_note", "corr2_pair", "corr2_note", "mistakes", "why", "review", "cl_verdict", "cl_score", "status",
+    "setup", "corr1_pair", "corr1_note", "corr2_pair", "corr2_note", "risk_pct", "planned_rr", "mistakes", "why", "review", "cl_verdict", "cl_score", "status",
 )
 
 
@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS {name} (
     corr1_note  TEXT NOT NULL DEFAULT '',
     corr2_pair  TEXT NOT NULL DEFAULT '',            -- an optional second correlation
     corr2_note  TEXT NOT NULL DEFAULT '',
+    risk_pct    TEXT NOT NULL DEFAULT '',            -- 0.7.2: risk of the trade in % of the account, free text (e.g. 1, 0.5)
+    planned_rr  TEXT NOT NULL DEFAULT '',            -- 0.7.2: planned reward : risk, free text (e.g. 1:3)
     mistakes    TEXT NOT NULL DEFAULT '',
     why         TEXT NOT NULL DEFAULT '',
     review      TEXT NOT NULL DEFAULT '',
@@ -125,7 +127,8 @@ class Database:
         # 0.7.1: correlation pairs (up to two per trade). The single "DXY confirmation" text of older versions becomes
         # the note of the first correlation; its pair is DXY / ES! depending on the traded pair.
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(trades)")}
-        for col in ("corr1_pair", "corr1_note", "corr2_pair", "corr2_note"):
+        # 0.7.2: risk % and planned R:R (added to existing databases once)
+        for col in ("corr1_pair", "corr1_note", "corr2_pair", "corr2_note", "risk_pct", "planned_rr"):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE trades ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         old = self.conn.execute("SELECT id, instrument, dxy_conf FROM trades WHERE dxy_conf != ''").fetchall()
@@ -193,7 +196,7 @@ class Database:
         if search:
             like = f"%{search}%"
             cols = ("instrument", "setup", "corr1_pair", "corr1_note", "corr2_pair", "corr2_note", "mistakes", "why", "review", "direction", "session",
-                    "entry", "sl", "tp", "exit_price")
+                    "entry", "sl", "tp", "exit_price", "risk_pct", "planned_rr")
             where.append("(" + " OR ".join(f"{c} LIKE ?" for c in cols) + ")")
             params.extend([like] * len(cols))
         if where:
@@ -214,7 +217,7 @@ class Database:
 
     # drop-down groups that read several columns at once
     VALUE_GROUPS = {"corr_pair": ("corr1_pair", "corr2_pair"), "corr_note": ("corr1_note", "corr2_note")}
-    VALUE_COLUMNS = ("setup", "instrument", "session", "entry", "sl", "tp", "exit_price", "mistakes")
+    VALUE_COLUMNS = ("setup", "instrument", "session", "entry", "sl", "tp", "exit_price", "mistakes", "risk_pct", "planned_rr")
 
     def distinct_values(self, column, exclude_id=None, recent_first=False):
         """Values already used in earlier trades (for the drop-down suggestions). `column` is a column name or a

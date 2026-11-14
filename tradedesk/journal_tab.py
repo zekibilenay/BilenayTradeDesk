@@ -18,13 +18,14 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageGrab, ImageOps, ImageTk
 
 from . import theme
-from .journal_model import (DEFAULT_KINDS, DEFAULT_PAIRS, DEFAULT_SESSIONS, correlation_defaults, hide_value,
-                            merge_unique, next_kind, unhide_value, visible)
+from .journal_model import (DEFAULT_KINDS, DEFAULT_PAIRS, DEFAULT_SESSIONS, correlation_defaults, display_date,
+                            hide_value, merge_unique, next_kind, parse_date, remember_value, saved_values,
+                            unhide_value, visible)
 from .paths import IMAGES_DIR
 from .widgets import ConfirmButton, ScrollFrame, SuggestBox, bind_autosize
 
 OUTCOMES = ["Open", "Win", "Loss", "BE"]
-DIRECTIONS = ["", "Long", "Short"]
+DIRECTIONS = ["Long", "Short"]
 THUMB = (640, 400)                  # on-disk thumbnail cache size (max)
 PAGE = 10
 JOURNAL_WHEEL_PX = 50                # pixels per mouse-wheel notch (slow, so you can read your way down)
@@ -216,10 +217,15 @@ class Gallery(tk.Frame):
                         self.tab.unhide_suggestion("kind", new)
                         kbox.typed = False
                 kbox.entry.selection_clear()
+            def enter(_value, commit=commit, v=kind_var):
+                commit()                                      # Enter: keep the label and offer it from now on
+                new = v.get().strip()
+                if new:
+                    self.tab.remember_suggestion("kind", new)
+                    self.tab.unhide_suggestion("kind", new)
             kbox = SuggestBox(line, kind_var, self.tab.kind_values, width=12, on_pick=commit,
-                              on_delete=lambda val: self.tab.hide_suggestion("kind", val))
+                              on_delete=lambda val: self.tab.hide_suggestion("kind", val), on_enter=enter)
             kbox.pack(side="left")
-            kbox.entry.bind("<Return>", commit)
             kbox.entry.bind("<FocusOut>", commit, add="+")
             ConfirmButton(line, command=lambda rid=r["id"]: self.card.delete_image(rid), text="Remove",
                           armed_text="Click again", bg=theme.PANEL2).pack(side="right")
@@ -233,10 +239,11 @@ class Gallery(tk.Frame):
 class TradeCard(tk.Frame):
     TEXT_KEYS = ("trade_date", "trade_time", "instrument", "direction", "session", "entry", "sl", "tp",
                  "exit_price", "outcome", "result_r", "setup", "corr1_pair", "corr1_note", "corr2_pair",
-                 "corr2_note", "mistakes")
+                 "corr2_note", "risk_pct", "planned_rr", "mistakes")
     # which drop-down list (group) a field belongs to: typing a value there brings a removed suggestion back
     HIDE_GROUPS = {"instrument": "instrument", "session": "session", "entry": "entry", "sl": "sl", "tp": "tp",
                    "exit_price": "exit_price", "setup": "setup", "mistakes": "mistakes",
+                   "risk_pct": "risk_pct", "planned_rr": "planned_rr",
                    "corr1_pair": "corr_pair", "corr2_pair": "corr_pair",
                    "corr1_note": "corr_note", "corr2_note": "corr_note"}
 
@@ -306,7 +313,7 @@ class TradeCard(tk.Frame):
         """Save, then switch to the compact read-only look."""
         if not self.save():
             if self.finish_msg is not None:
-                self.finish_msg.configure(text="Fix the date / time format first (YYYY-MM-DD, HH:MM).",
+                self.finish_msg.configure(text="Fix the date / time format first (DD-MM-YYYY, HH:MM).",
                                           fg=theme.ORANGE)
             return
         self.db.update_trade(self.id, {"status": "done"})
@@ -338,7 +345,8 @@ class TradeCard(tk.Frame):
             w = ttk.Entry(f, textvariable=var, width=width)
         elif kind == "suggest":
             group = self.HIDE_GROUPS.get(key, key)
-            w = SuggestBox(f, var, values, on_delete=lambda v, g=group: self.tab.hide_suggestion(g, v), width=width)
+            w = SuggestBox(f, var, values, on_delete=lambda v, g=group: self.tab.hide_suggestion(g, v), width=width,
+                           on_enter=lambda v, k=key: self._remember(k, v))
         else:
             w = ttk.Combobox(f, textvariable=var, values=values or [], width=width, exportselection=False,
                              state="readonly")
@@ -355,10 +363,24 @@ class TradeCard(tk.Frame):
 
         def get():
             base = defaults() if callable(defaults) else defaults
-            return visible(merge_unique(base, self.db.distinct_values(column, exclude_id=self.id,
-                                                                      recent_first=recent_first)),
+            return visible(merge_unique(base, self.tab.saved(group, newest_first=recent_first),
+                                        self.db.distinct_values(column, exclude_id=self.id,
+                                                                recent_first=recent_first)),
                            self.tab.hidden(group))
         return get
+
+    def _remember(self, key, value):
+        """Enter in a drop-down box: save the value for good (offered in every later trade) and store the trade now."""
+        group = self.HIDE_GROUPS.get(key, key)
+        self.tab.remember_suggestion(group, value)
+        self.tab.unhide_suggestion(group, value)
+        self._initial[key] = value
+        self.save()
+
+    def _remember_kind(self, value):
+        self.tab.remember_suggestion("kind", value)
+        self.tab.unhide_suggestion("kind", value)
+        self.kind_box.typed = False
 
     def _build_edit(self, row):
         ui = theme.F["ui"]
@@ -381,7 +403,7 @@ class TradeCard(tk.Frame):
         tk.Label(r1, text=f"TRADE #{self.number}", bg=theme.PANEL, fg=theme.ACCENT,
                  font=(ui, 12, "bold")).pack(side="left", padx=(0, 16), anchor="s")
         for label, key, kind, width, vals, _unused in (
-                ("Date (YYYY-MM-DD)", "trade_date", "entry", 13, None, None),
+                ("Date (DD-MM-YYYY)", "trade_date", "entry", 13, None, None),
                 ("Time (HH:MM)", "trade_time", "entry", 8, None, None),
                 ("Pair", "instrument", "suggest", 10, self._suggest("instrument", DEFAULT_PAIRS), None),
                 ("Direction", "direction", "combo", 8, DIRECTIONS, None),
@@ -392,28 +414,25 @@ class TradeCard(tk.Frame):
         self.status = tk.Label(r1, text="", bg=theme.PANEL, fg=theme.GREEN, font=(ui, 9))
         self.status.pack(side="right", padx=10, anchor="s")
 
-        # --- row 2: result, setup and up to two correlations (shown with "+")
+        # --- row 2: result, then Setup and up to two correlations that share the rest of the row equally
         r2 = tk.Frame(body, bg=theme.PANEL)
         r2.pack(fill="x", pady=(10, 0))
-        self._field(r2, "Outcome", "outcome", "combo", 9, OUTCOMES).pack(side="left", padx=(0, 10))
-        self._field(r2, "Result (e.g. +2R)", "result_r", "entry", 8).pack(side="left", padx=(0, 10))
-        self._field(r2, "Setup", "setup", "suggest", 12, self._suggest("setup")).pack(
-            side="left", padx=(0, 0), fill="x", expand=True)
-        self._build_correlations(r2, row)
+        self._field(r2, "Outcome", "outcome", "combo", 9, OUTCOMES).pack(side="left", padx=(0, 10), anchor="n")
+        self._field(r2, "Result (e.g. +2R)", "result_r", "entry", 8).pack(side="left", padx=(0, 10), anchor="n")
+        self._build_setup_row(r2, row)
 
-        # --- row 3: free-text levels (liquidity names etc.)
+        # --- rows 3 + 4 share four equal columns, so Mistakes is exactly as wide as Entry
         r3 = tk.Frame(body, bg=theme.PANEL)
         r3.pack(fill="x", pady=(10, 0))
-        for i, (label, key) in enumerate((("Entry", "entry"), ("Stop", "sl"), ("Target", "tp"), ("Exit", "exit_price"))):
+        for i in range(4):
             r3.columnconfigure(i, weight=1, uniform="lv")
+        for i, (label, key) in enumerate((("Entry", "entry"), ("Stop", "sl"), ("Target", "tp"), ("Exit", "exit_price"))):
             self._field(r3, label, key, "suggest", 10, self._suggest(key, recent_first=True)).grid(
                 row=0, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0))
-
-        # --- row 4: mistakes (earlier ones can be picked again)
-        r4 = tk.Frame(body, bg=theme.PANEL)
-        r4.pack(fill="x", pady=(10, 0))
-        self._field(r4, "Mistakes", "mistakes", "suggest", 40, self._suggest("mistakes", recent_first=True)).pack(
-            fill="x")
+        for i, (label, key) in enumerate((("Risk %", "risk_pct"), ("Planned R:R", "planned_rr"),
+                                          ("Mistakes", "mistakes"))):
+            self._field(r3, label, key, "suggest", 10, self._suggest(key, recent_first=True)).grid(
+                row=1, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0), pady=(10, 0))
 
         # --- images
         self._section_label(body, "CHARTS & SCREENSHOTS")
@@ -422,7 +441,8 @@ class TradeCard(tk.Frame):
         tk.Label(bar, text="Type of next image:", bg=theme.PANEL, fg=theme.MUTED, font=(ui, 9)).pack(side="left")
         self.kind_var = tk.StringVar(value=DEFAULT_KINDS[0])
         self.kind_box = SuggestBox(bar, self.kind_var, self.tab.kind_values, width=14,
-                                   on_delete=lambda v: self.tab.hide_suggestion("kind", v))
+                                   on_delete=lambda v: self.tab.hide_suggestion("kind", v),
+                                   on_enter=self._remember_kind)
         self.kind_box.pack(side="left", padx=(6, 4))
         tk.Label(bar, text="pick one or type a new label", bg=theme.PANEL, fg=theme.MUTED, font=(ui, 8)).pack(
             side="left", padx=(0, 12))
@@ -452,7 +472,9 @@ class TradeCard(tk.Frame):
 
         # --- fill values
         for k in self.TEXT_KEYS:
-            self.vars[k].set(row.get(k) or "")
+            value = row.get(k) or ""
+            self.vars[k].set(display_date(value) if k == "trade_date" else value)
+        self.widgets["trade_date"].bind("<FocusOut>", self._tidy_date, add="+")
         self.why.insert("1.0", row.get("why", ""))
         self.review.insert("1.0", row.get("review", ""))
         self.why.bind("<KeyRelease>", self._changed, add="+")
@@ -461,30 +483,33 @@ class TradeCard(tk.Frame):
         self._update_strip()
         self.render_gallery()
 
-    # ---- correlations: "+" opens a pair box and a note box; after the first one a second "+" appears next to it
-    def _build_correlations(self, parent, row):
+    # ---- Setup + correlations: one row split into equal columns. Only Setup: it takes the whole row (a "+" waits on
+    # the right). With a correlation: Setup and the correlation share the row 50/50. With two: a third each.
+    def _build_setup_row(self, parent, row):
         self._corr_open = {n: bool((row.get(f"corr{n}_pair") or "").strip() or (row.get(f"corr{n}_note") or "").strip())
                            for n in (1, 2)}
         if self._corr_open[2]:
             self._corr_open[1] = True
-        self.corr_box = tk.Frame(parent, bg=theme.PANEL)
-        self.corr_box.pack(side="left", anchor="n")
+        self.sc = tk.Frame(parent, bg=theme.PANEL)
+        self.sc.pack(side="left", fill="x", expand=True, anchor="n")
+        self.setup_f = self._field(self.sc, "Setup", "setup", "suggest", 8, self._suggest("setup"))
         self._corr_plus, self._corr_slot = {}, {}
         for n in (1, 2):
             title = "Correlation" if n == 1 else "2nd correlation"
-            plus = tk.Frame(self.corr_box, bg=theme.PANEL)
+            plus = tk.Frame(self.sc, bg=theme.PANEL)
             tk.Label(plus, text=title.upper(), bg=theme.PANEL, fg=theme.MUTED, font=(theme.F["ui"], 8, "bold"),
                      anchor="w").pack(fill="x")
             ttk.Button(plus, text="+", width=4, command=lambda k=n: self._corr_show(k)).pack(anchor="w", pady=(3, 0))
-            slot = tk.Frame(self.corr_box, bg=theme.PANEL)
-            self._field(slot, title, f"corr{n}_pair", "suggest", 7,
+            slot = tk.Frame(self.sc, bg=theme.PANEL)
+            slot.columnconfigure(1, weight=1)
+            self._field(slot, title, f"corr{n}_pair", "suggest", 6,
                         self._suggest("corr_pair", lambda: correlation_defaults(self.vars["instrument"].get()))
-                        ).pack(side="left", padx=(0, 6))
-            self._field(slot, "Setup" if n == 1 else "2nd setup", f"corr{n}_note", "suggest", 14,
-                        self._suggest("corr_note", recent_first=True)).pack(side="left", padx=(0, 2))
+                        ).grid(row=0, column=0, sticky="new", padx=(0, 6))
+            self._field(slot, "Setup" if n == 1 else "2nd setup", f"corr{n}_note", "suggest", 8,
+                        self._suggest("corr_note", recent_first=True)).grid(row=0, column=1, sticky="new")
             x = tk.Label(slot, text="✕", bg=theme.PANEL, fg=theme.MUTED, font=(theme.F["ui"], 10), cursor="hand2",
                          padx=5)
-            x.pack(side="left", anchor="s", pady=(0, 3))
+            x.grid(row=0, column=2, sticky="s", padx=(2, 0), pady=(0, 3))
             x.bind("<Button-1>", lambda e=None, k=n: self._corr_remove(k))
             x.bind("<Enter>", lambda e=None, w=x: w.configure(fg=theme.RED))
             x.bind("<Leave>", lambda e=None, w=x: w.configure(fg=theme.MUTED))
@@ -492,13 +517,21 @@ class TradeCard(tk.Frame):
         self._corr_refresh()
 
     def _corr_refresh(self):
-        for w in self.corr_box.winfo_children():
-            w.pack_forget()
+        for w in (self.setup_f, *self._corr_plus.values(), *self._corr_slot.values()):
+            w.grid_forget()
+        self.setup_f.grid(row=0, column=0, sticky="new", padx=(0, 10))
+        col = 1
         for n in (1, 2):
             if self._corr_open[n]:
-                self._corr_slot[n].pack(side="left", anchor="n", padx=(10, 0))
-            elif n == 1 or self._corr_open[1]:            # the 2nd "+" only appears once the first one is in use
-                self._corr_plus[n].pack(side="left", anchor="n", padx=(10, 0))
+                self._corr_slot[n].grid(row=0, column=col, sticky="new", padx=(0, 10))
+                col += 1
+        nxt = next((n for n in (1, 2) if not self._corr_open[n]), None)       # the "+" for the next free correlation
+        if nxt:
+            self._corr_plus[nxt].grid(row=0, column=3, sticky="nw")
+        for c in range(3):                                                   # used columns share the row equally
+            used = c < col
+            self.sc.columnconfigure(c, weight=1 if used else 0, uniform="sc" if used else "")
+        self.sc.columnconfigure(3, weight=0)
 
     def _corr_show(self, n):
         self._corr_open[n] = True
@@ -561,12 +594,16 @@ class TradeCard(tk.Frame):
         if not self.editing or not self.vars:
             return True
         v = {k: self.vars[k].get().strip() for k in self.TEXT_KEYS}
-        date_ok = self._valid(v["trade_date"], "%Y-%m-%d")
+        iso = parse_date(v["trade_date"])                       # typed as DD-MM-YYYY, stored as YYYY-MM-DD
+        date_ok = iso is not None
         time_ok = v["trade_time"] == "" or self._valid(v["trade_time"], "%H:%M")
         self.widgets["trade_date"].configure(style="TEntry" if date_ok else "Invalid.TEntry")
         self.widgets["trade_time"].configure(style="TEntry" if time_ok else "Invalid.TEntry")
-        fields = {k: v[k] for k in self.TEXT_KEYS if not (k == "trade_date" and not date_ok)
-                  and not (k == "trade_time" and not time_ok)}
+        fields = {k: v[k] for k in self.TEXT_KEYS if k not in ("trade_date", "trade_time")}
+        if date_ok:
+            fields["trade_date"] = iso
+        if time_ok:
+            fields["trade_time"] = v["trade_time"]
         fields["instrument"] = v["instrument"] or "EURUSD"
         fields["why"] = self.why.get("1.0", "end-1c").strip()
         fields["review"] = self.review.get("1.0", "end-1c").strip()
@@ -581,6 +618,14 @@ class TradeCard(tk.Frame):
             self.status.configure(text="date/time format not saved", fg=theme.ORANGE)
         self.tab.refresh_stats()
         return date_ok and time_ok
+
+    def _tidy_date(self, _e=None):
+        """Leaving the date box: a valid date is rewritten as DD-MM-YYYY (e.g. 5.1.2026 -> 05-01-2026)."""
+        iso = parse_date(self.vars["trade_date"].get())
+        if iso:
+            tidy = display_date(iso)
+            if tidy != self.vars["trade_date"].get():
+                self.vars["trade_date"].set(tidy)
 
     def _update_strip(self):
         self.strip.configure(bg=out_color(self.vars["outcome"].get()))
@@ -600,7 +645,7 @@ class TradeCard(tk.Frame):
         head.pack(fill="x")
         tk.Label(head, text=f"TRADE #{self.number}", bg=theme.PANEL, fg=theme.ACCENT,
                  font=(ui, 12, "bold")).pack(side="left", padx=(0, 14))
-        meta = "   ·   ".join(x for x in (row.get("trade_date"), row.get("trade_time"), row.get("instrument"),
+        meta = "   ·   ".join(x for x in (display_date(row.get("trade_date")), row.get("trade_time"), row.get("instrument"),
                                           row.get("session")) if x)
         tk.Label(head, text=meta, bg=theme.PANEL, fg=theme.FG, font=(ui, 11)).pack(side="left")
         d = row.get("direction")
@@ -623,7 +668,7 @@ class TradeCard(tk.Frame):
             if pair or note:
                 corr.append((f"Correlation · {pair}" if pair and note else "Correlation", note or pair))
         facts = [fact("Entry", "entry"), fact("Stop", "sl"), fact("Target", "tp"), fact("Exit", "exit_price"),
-                 fact("Setup", "setup")] + corr + [fact("Mistakes", "mistakes")]
+                 fact("Risk %", "risk_pct"), fact("Planned R:R", "planned_rr"), fact("Setup", "setup")] + corr + [fact("Mistakes", "mistakes")]
         facts = [(label, value) for label, value in facts if value]
         if facts:
             grid = tk.Frame(body, bg=theme.PANEL)
@@ -847,7 +892,14 @@ class JournalTab(ttk.Frame):
 
     def kind_values(self):
         """Image types offered in the drop-downs: the built-in ones plus every custom label used before."""
-        return visible(merge_unique(DEFAULT_KINDS, self.db.distinct_kinds()), self.hidden("kind"))
+        return visible(merge_unique(DEFAULT_KINDS, self.saved("kind"), self.db.distinct_kinds()), self.hidden("kind"))
+
+    # ---- values saved with Enter (offered in every later trade, even if no other trade uses them yet)
+    def saved(self, group, newest_first=False):
+        return saved_values(self.settings.get("saved_suggestions"), group, newest_first)
+
+    def remember_suggestion(self, group, value):
+        self.settings.set("saved_suggestions", remember_value(self.settings.get("saved_suggestions"), group, value))
 
     # ---- values removed from the drop-down lists with the ✕ (hidden only: earlier trades keep them)
     def hidden(self, group):
