@@ -2,7 +2,7 @@ name: Build Windows exe
 on:
   workflow_dispatch:          # manual: Actions tab -> Build Windows exe -> Run workflow
   push:
-    tags: ["v*"]              # tagging v0.3.1 etc. builds the exe and publishes a GitHub Release
+    tags: ["v*"]              # tagging v0.7.0 etc. builds the exe and publishes a GitHub Release
 permissions:
   contents: write
 jobs:
@@ -10,22 +10,40 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The app may sit in the repo root or in a sub-folder: find the folder that holds main.py + tradedesk/
+      - name: Find the app folder
+        shell: pwsh
+        run: |
+          $main = Get-ChildItem -Path . -Recurse -Filter main.py -File |
+            Where-Object { Test-Path (Join-Path $_.DirectoryName "tradedesk") } | Select-Object -First 1
+          if (-not $main) { throw "main.py with a tradedesk/ folder was not found in the repository" }
+          Write-Host "App folder: $($main.DirectoryName)"
+          "APP_DIR=$($main.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements-dev.txt pyinstaller
+        working-directory: ${{ env.APP_DIR }}
       - run: python -m pytest -q
-      - run: pyinstaller --noconfirm --clean --onedir --windowed --name TradeHub --icon assets/icon.ico --add-data "assets;assets" --hidden-import PIL._tkinter_finder main.py
+        working-directory: ${{ env.APP_DIR }}
+      - run: pyinstaller --noconfirm --clean --onedir --windowed --name BilenayTradeDesk --icon assets/icon.ico --add-data "assets;assets" --hidden-import PIL._tkinter_finder main.py
+        working-directory: ${{ env.APP_DIR }}
       - name: Zip
         shell: pwsh
-        run: Compress-Archive -Path dist/TradeHub -DestinationPath "TradeHub-${{ github.ref_name }}-windows.zip"
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          if (-not (Test-Path dist/BilenayTradeDesk/BilenayTradeDesk.exe)) { throw "BilenayTradeDesk.exe was not built" }
+          Compress-Archive -Path dist/BilenayTradeDesk -DestinationPath "$env:GITHUB_WORKSPACE/BilenayTradeDesk-${{ github.ref_name }}-windows.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: TradeHub-windows
-          path: TradeHub-*-windows.zip
+          name: BilenayTradeDesk-windows
+          path: BilenayTradeDesk-*-windows.zip
       - name: Release notes from CHANGELOG.md
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
+        working-directory: ${{ env.APP_DIR }}
         run: |
           $ver = "${{ github.ref_name }}".TrimStart('v')
           $out = @(); $on = $false
@@ -33,11 +51,12 @@ jobs:
             if ($l -match '^## ') { if ($on) { break }; if ($l.Trim() -eq "## $ver") { $on = $true; continue } }
             if ($on) { $out += $l }
           }
-          if ($out.Count -eq 0) { $out = @("TradeHub $ver") }
-          Set-Content -Path release_notes.md -Value $out -Encoding utf8
+          if ($out.Count -eq 0) { $out = @("Bilenay Trade Desk $ver") }
+          Set-Content -Path "$env:GITHUB_WORKSPACE/release_notes.md" -Value $out -Encoding utf8
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: TradeHub-*-windows.zip
+          name: Bilenay Trade Desk ${{ github.ref_name }}
+          files: BilenayTradeDesk-*-windows.zip
           body_path: release_notes.md
