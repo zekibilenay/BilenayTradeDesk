@@ -1,10 +1,10 @@
 @echo off
-REM Builds TradeHub.exe  ->  dist\TradeHub\TradeHub.exe
+REM Builds the Windows app  ->  release\BilenayTradeDesk-v<version>-windows.zip  (and dist\BilenayTradeDesk\BilenayTradeDesk.exe)
 REM Requires Python 3.10+ from python.org (keep the "tcl/tk and IDLE" option ticked).
 cd /d "%~dp0"
 py -m pip install --upgrade pip
 py -m pip install -r requirements.txt pyinstaller
-py -m PyInstaller --noconfirm --clean --onedir --windowed --name TradeHub --icon assets\icon.ico --add-data "assets;assets" --hidden-import PIL._tkinter_finder main.py
+py build.py
 echo.
-echo Done. Your app: dist\TradeHub\TradeHub.exe
+echo Your app: dist\BilenayTradeDesk\BilenayTradeDesk.exe
 pause

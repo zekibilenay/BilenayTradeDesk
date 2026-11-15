@@ -1,6 +1,6 @@
 import sqlite3
 
-from tradehub.db import Database
+from tradedesk.db import Database
 
 
 def test_trade_crud_and_free_text(tmp_path):
@@ -99,3 +99,54 @@ def test_migration_from_v02(tmp_path):
     assert db.get_checklist_day("2026-10-30")["note"] == "old note"
     db.close()
     Database(p).close()                                                           # second open: no migration error
+
+
+def test_trade_numbers_are_a_running_count(tmp_path):
+    """With n trades the next one is n + 1, even after trades were deleted (the internal id keeps growing)."""
+    db = Database(tmp_path / "t.db")
+    ids = [db.create_trade("2026-11-0%d" % d, "10:00") for d in (1, 2, 3)]
+    assert db.trade_numbers() == {ids[0]: 1, ids[1]: 2, ids[2]: 3}
+    db.delete_trade(ids[1])
+    assert db.trade_numbers() == {ids[0]: 1, ids[2]: 2}
+    new = db.create_trade("2026-11-04", "10:00")
+    assert new > ids[2] and db.trade_numbers()[new] == 3
+
+
+def test_risk_and_planned_rr_are_stored_searched_and_offered(tmp_path):
+    db = Database(tmp_path / "t.db")
+    a = db.create_trade("2026-11-14", "20:05")
+    b = db.create_trade("2026-11-15", "09:00")
+    db.update_trade(a, {"risk_pct": "0.5", "planned_rr": "1:3"})
+    db.update_trade(b, {"risk_pct": "1", "planned_rr": "1:3"})
+    t = db.get_trade(a)
+    assert (t["risk_pct"], t["planned_rr"]) == ("0.5", "1:3")
+    assert db.distinct_values("planned_rr") == ["1:3"]
+    assert db.distinct_values("risk_pct", exclude_id=b) == ["0.5"]
+    assert db.list_trades(search="1:3")[0]["id"] == b                   # newest first; both match
+    assert len(db.list_trades(search="1:3")) == 2
+
+
+def test_database_from_0_7_1_gets_the_new_columns_once(tmp_path):
+    import sqlite3
+    p = tmp_path / "old.db"
+    c = sqlite3.connect(p)
+    c.executescript("""
+    CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, trade_date TEXT NOT NULL, trade_time TEXT NOT NULL DEFAULT '',
+     instrument TEXT NOT NULL DEFAULT 'EURUSD', direction TEXT NOT NULL DEFAULT '', session TEXT NOT NULL DEFAULT '',
+     entry TEXT NOT NULL DEFAULT '', sl TEXT NOT NULL DEFAULT '', tp TEXT NOT NULL DEFAULT '', exit_price TEXT NOT NULL DEFAULT '',
+     outcome TEXT NOT NULL DEFAULT 'Open', result_r TEXT NOT NULL DEFAULT '', setup TEXT NOT NULL DEFAULT '',
+     dxy_conf TEXT NOT NULL DEFAULT '', corr1_pair TEXT NOT NULL DEFAULT '', corr1_note TEXT NOT NULL DEFAULT '',
+     corr2_pair TEXT NOT NULL DEFAULT '', corr2_note TEXT NOT NULL DEFAULT '',
+     mistakes TEXT NOT NULL DEFAULT '', why TEXT NOT NULL DEFAULT '',
+     review TEXT NOT NULL DEFAULT '', cl_verdict TEXT NOT NULL DEFAULT '', cl_score REAL, status TEXT NOT NULL DEFAULT 'done',
+     created_at TEXT);
+    INSERT INTO trades (trade_date, mistakes) VALUES ('2026-10-30', 'moved stop');
+    """)
+    c.commit()
+    c.close()
+    db = Database(p)
+    t = db.get_trade(1)
+    assert (t["trade_date"], t["mistakes"], t["risk_pct"], t["planned_rr"]) == ("2026-10-30", "moved stop", "", "")
+    db.update_trade(1, {"risk_pct": "1"})
+    db.close()
+    assert Database(p).get_trade(1)["risk_pct"] == "1"                  # opening again keeps the value

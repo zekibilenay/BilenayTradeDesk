@@ -3,7 +3,7 @@ import pytest
 
 pytest.importorskip("tkinter")
 
-from tradehub.calendar_tab import TZ_BY_LABEL, tz_label  # noqa: E402
+from tradedesk.calendar_tab import TZ_BY_LABEL, tz_label  # noqa: E402
 
 
 def test_labels():

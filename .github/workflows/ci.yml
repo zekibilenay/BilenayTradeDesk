@@ -8,10 +8,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Find the app folder
+        run: |
+          main=$(find . -name main.py -not -path './.git/*' -execdir test -d tradedesk \; -print | head -n 1)
+          [ -n "$main" ] || { echo "main.py with a tradedesk/ folder not found"; exit 1; }
+          echo "APP_DIR=$(dirname "$main")" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y python3-tk
       - run: python -m pip install -r requirements-dev.txt
-      - run: python -m compileall -q tradehub main.py
+        working-directory: ${{ env.APP_DIR }}
+      - run: python -m compileall -q tradedesk main.py
+        working-directory: ${{ env.APP_DIR }}
       - run: python -m pytest -q
+        working-directory: ${{ env.APP_DIR }}
