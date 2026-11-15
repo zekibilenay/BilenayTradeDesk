@@ -1,2 +1,0 @@
-APP_NAME = "TradeHub"
-APP_VERSION = "0.3.1"
